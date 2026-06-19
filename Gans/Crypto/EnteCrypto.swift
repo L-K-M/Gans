@@ -51,9 +51,9 @@ enum EnteCrypto {
             salt.withUnsafeBufferPointer { saltPtr in
                 out.withUnsafeMutableBufferPointer { outPtr in
                     crypto_pwhash(
-                        outPtr.baseAddress, UInt64(outputLength),
-                        pwRaw.bindMemory(to: CChar.self).baseAddress, UInt64(passwordBytes.count),
-                        saltPtr.baseAddress,
+                        outPtr.baseAddress!, UInt64(outputLength),
+                        pwRaw.bindMemory(to: CChar.self).baseAddress!, UInt64(passwordBytes.count),
+                        saltPtr.baseAddress!,
                         UInt64(opsLimit), memLimit,
                         crypto_pwhash_alg_argon2id13()
                     )
@@ -80,10 +80,10 @@ enum EnteCrypto {
                 subKey.withUnsafeMutableBufferPointer { outPtr in
                     ctx.baseAddress!.withMemoryRebound(to: CChar.self, capacity: 8) { ctxChar in
                         crypto_kdf_derive_from_key(
-                            outPtr.baseAddress, 32,
+                            outPtr.baseAddress!, 32,
                             1,
                             ctxChar,
-                            keyPtr.baseAddress
+                            keyPtr.baseAddress!
                         )
                     }
                 }
@@ -112,8 +112,8 @@ enum EnteCrypto {
                 key.withUnsafeBufferPointer { k in
                     out.withUnsafeMutableBufferPointer { m in
                         crypto_secretbox_open_easy(
-                            m.baseAddress, c.baseAddress, UInt64(cipherText.count),
-                            n.baseAddress, k.baseAddress
+                            m.baseAddress!, c.baseAddress!, UInt64(cipherText.count),
+                            n.baseAddress!, k.baseAddress!
                         )
                     }
                 }
@@ -141,8 +141,8 @@ enum EnteCrypto {
                 secretKey.withUnsafeBufferPointer { sk in
                     out.withUnsafeMutableBufferPointer { m in
                         crypto_box_seal_open(
-                            m.baseAddress, c.baseAddress, UInt64(cipherText.count),
-                            pk.baseAddress, sk.baseAddress
+                            m.baseAddress!, c.baseAddress!, UInt64(cipherText.count),
+                            pk.baseAddress!, sk.baseAddress!
                         )
                     }
                 }
@@ -170,7 +170,7 @@ enum EnteCrypto {
         var state = crypto_secretstream_xchacha20poly1305_state()
         let initRC = header.withUnsafeBufferPointer { h in
             key.withUnsafeBufferPointer { k in
-                crypto_secretstream_xchacha20poly1305_init_pull(&state, h.baseAddress, k.baseAddress)
+                crypto_secretstream_xchacha20poly1305_init_pull(&state, h.baseAddress!, k.baseAddress!)
             }
         }
         guard initRC == 0 else { throw CryptoError.operationFailed("Secretstream init") }
@@ -182,8 +182,8 @@ enum EnteCrypto {
             out.withUnsafeMutableBufferPointer { m in
                 crypto_secretstream_xchacha20poly1305_pull(
                     &state,
-                    m.baseAddress, &outLen, &tag,
-                    c.baseAddress, UInt64(cipherText.count),
+                    m.baseAddress!, &outLen, &tag,
+                    c.baseAddress!, UInt64(cipherText.count),
                     nil, 0
                 )
             }
