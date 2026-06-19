@@ -22,6 +22,15 @@ final class TOTPGeneratorTests: XCTestCase {
         XCTAssertEqual(totp(sha1Seed, 20000000000, .sha1), "65353130")
     }
 
+    func testDigitsClampedToSafeRange() {
+        // 10^10 overflows UInt32; digits must be clamped so generation never traps.
+        let huge = TOTPGenerator.code(secret: sha1Seed, counter: 1, digits: 99, algorithm: .sha1)
+        XCTAssertEqual(huge.count, 9)
+        XCTAssertEqual(huge, TOTPGenerator.code(secret: sha1Seed, counter: 1, digits: 9, algorithm: .sha1))
+        // A zero/negative digit count clamps up to 1 (and stays non-empty).
+        XCTAssertEqual(TOTPGenerator.code(secret: sha1Seed, counter: 1, digits: 0, algorithm: .sha1).count, 1)
+    }
+
     func testRFC6238_SHA256() {
         XCTAssertEqual(totp(sha256Seed, 59, .sha256), "46119246")
         XCTAssertEqual(totp(sha256Seed, 1111111109, .sha256), "68084774")

@@ -16,6 +16,11 @@ final class QuickSearchModel: ObservableObject {
 
     private var allEntries: [AuthEntry] = []
 
+    /// Most-recently-used entry ids (most recent first), used to bias result ordering.
+    var recentIDs: [String] = [] {
+        didSet { recomputeResults() }
+    }
+
     func setEntries(_ entries: [AuthEntry]) {
         allEntries = entries
         recomputeResults()
@@ -39,7 +44,7 @@ final class QuickSearchModel: ObservableObject {
     }
 
     private func recomputeResults() {
-        results = SearchFilter.filter(allEntries, query: query)
+        results = SearchFilter.filter(allEntries, query: query, recentIDs: recentIDs)
         if !results.indices.contains(selectedIndex) { selectedIndex = 0 }
     }
 }

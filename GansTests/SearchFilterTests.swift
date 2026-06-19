@@ -42,6 +42,38 @@ final class SearchFilterTests: XCTestCase {
         XCTAssertTrue(SearchFilter.filter(entries, query: "zzzzz").isEmpty)
     }
 
+    func testSubsequenceFuzzyMatch() {
+        // "ghb" isn't a prefix or substring of "GitHub", but it's a subsequence.
+        let result = SearchFilter.filter(entries, query: "ghb")
+        XCTAssertEqual(result.first?.issuer, "GitHub")
+    }
+
+    func testLiteralMatchOutranksFuzzy() {
+        // "gitl" is a prefix of GitLab (rank 0) but only a subsequence of GitHub
+        // ("git" + the "l" in alice, rank 3); the prefix hit must win.
+        let result = SearchFilter.filter(entries, query: "gitl")
+        XCTAssertEqual(result.first?.issuer, "GitLab")
+    }
+
+    func testIsSubsequence() {
+        XCTAssertTrue(SearchFilter.isSubsequence("ghb", of: "github"))
+        XCTAssertTrue(SearchFilter.isSubsequence("", of: "anything"))
+        XCTAssertFalse(SearchFilter.isSubsequence("bhg", of: "github")) // order matters
+        XCTAssertFalse(SearchFilter.isSubsequence("xyz", of: "github"))
+    }
+
+    func testRecentlyUsedFloatsToTopForEmptyQuery() {
+        // Amazon would normally sort first alphabetically; recency overrides that.
+        let result = SearchFilter.filter(entries, query: "", recentIDs: ["Google-carol@github.io", "GitLab-bob"])
+        XCTAssertEqual(result.map(\.issuer), ["Google", "GitLab", "Amazon", "GitHub"])
+    }
+
+    func testRecencyBreaksTiesWithinSameRank() {
+        // Both Git* are prefix matches for "git" (rank 0); the recent one wins the tie.
+        let result = SearchFilter.filter(entries, query: "git", recentIDs: ["GitLab-bob"])
+        XCTAssertEqual(result.first?.issuer, "GitLab")
+    }
+
     func testNextIndexClampsAndWraps() {
         XCTAssertEqual(SearchFilter.nextIndex(count: 3, current: 0, down: true), 1)
         XCTAssertEqual(SearchFilter.nextIndex(count: 3, current: 2, down: true), 2) // clamp at end

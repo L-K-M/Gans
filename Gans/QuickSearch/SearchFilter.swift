@@ -10,12 +10,26 @@ enum SearchFilter {
         string.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 
-    /// Returns the entries matching `query`, best matches first. An empty query returns
-    /// everything sorted by display name.
-    static func filter(_ entries: [AuthEntry], query: String) -> [AuthEntry] {
+    /// Returns the entries matching `query`, best matches first.
+    ///
+    /// `recentIDs` is the most-recently-used entry ids (most recent first); it biases
+    /// ordering so codes you actually use float up. An empty query returns everything,
+    /// recently-used first and then alphabetically. For a non-empty query, entries are
+    /// ranked prefix → substring → subsequence (fuzzy), with recency and then name
+    /// breaking ties *within* a rank — so a real prefix hit always beats a fuzzy one.
+    static func filter(_ entries: [AuthEntry], query: String, recentIDs: [String] = []) -> [AuthEntry] {
+        let recencyRank: (AuthEntry) -> Int = { entry in
+            recentIDs.firstIndex(of: entry.id) ?? Int.max
+        }
+        let byRecencyThenName: (AuthEntry, AuthEntry) -> Bool = { lhs, rhs in
+            let lr = recencyRank(lhs), rr = recencyRank(rhs)
+            if lr != rr { return lr < rr }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return entries.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+            return entries.sorted(by: byRecencyThenName)
         }
 
         let needle = fold(trimmed)
@@ -27,13 +41,31 @@ enum SearchFilter {
             if issuer.hasPrefix(needle) || display.hasPrefix(needle) { return (entry, 0) }
             if account.hasPrefix(needle) { return (entry, 1) }
             if issuer.contains(needle) || account.contains(needle) || display.contains(needle) { return (entry, 2) }
+            // Loose fuzzy: every needle character appears in order somewhere in the name
+            // ("ghb" → "GitHub"). Ranked last so it never outranks a literal match.
+            if isSubsequence(needle, of: display) || isSubsequence(needle, of: account) { return (entry, 3) }
             return nil
         }
 
         return scored.sorted { lhs, rhs in
             if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
-            return lhs.entry.displayName.localizedCaseInsensitiveCompare(rhs.entry.displayName) == .orderedAscending
+            return byRecencyThenName(lhs.entry, rhs.entry)
         }.map(\.entry)
+    }
+
+    /// Whether every character of `needle` appears in `haystack` in order (not necessarily
+    /// contiguously). Both are expected to be already folded.
+    static func isSubsequence(_ needle: String, of haystack: String) -> Bool {
+        guard !needle.isEmpty else { return true }
+        var iterator = haystack.makeIterator()
+        for character in needle {
+            var matched = false
+            while let next = iterator.next() {
+                if next == character { matched = true; break }
+            }
+            if !matched { return false }
+        }
+        return true
     }
 
     /// The next selection index when pressing up/down through `count` rows. Clamps at the

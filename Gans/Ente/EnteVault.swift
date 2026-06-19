@@ -104,6 +104,7 @@ final class EnteVault: ObservableObject {
             let limit = 500
 
             while true {
+                let cursorAtPageStart = cursor
                 let diff = try await api.get(AuthEntityDiff.self, path: "authenticator/entity/diff",
                                              query: [URLQueryItem(name: "sinceTime", value: String(cursor)),
                                                      URLQueryItem(name: "limit", value: String(limit))],
@@ -116,7 +117,9 @@ final class EnteVault: ObservableObject {
                         byID[entity.id] = EntityCache.CachedEntity(id: entity.id, encryptedData: data, header: header)
                     }
                 }
-                if diff.count < limit { break }
+                // Stop on a short page, or if a full page failed to advance the cursor
+                // (otherwise we'd request the same window forever).
+                if diff.count < limit || cursor == cursorAtPageStart { break }
             }
 
             snapshot.entities = Array(byID.values)

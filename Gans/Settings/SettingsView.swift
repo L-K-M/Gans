@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 /// The Settings window content: account, Quick Search behavior, permissions, startup, and
 /// updates.
@@ -26,6 +27,12 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .frame(minHeight: 520)
+        // The user may grant Accessibility in System Settings and switch back; re-check
+        // when we reactivate so the status row reflects reality without a reopen.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            hasAccessibility = CodeInjector.hasAccessibilityPermission(prompt: false)
+            launchAtLogin = LaunchAtLogin.isEnabled
+        }
     }
 
     private var accountSection: some View {
@@ -61,6 +68,15 @@ struct SettingsView: View {
             }
             if preferences.deliveryMode == .type {
                 Toggle("Also copy to clipboard", isOn: $preferences.alsoCopyWhenTyping)
+            }
+            Toggle("Clear copied codes from the clipboard", isOn: $preferences.clearClipboardEnabled)
+            if preferences.clearClipboardEnabled {
+                Picker("Clear after", selection: $preferences.clearClipboardSeconds) {
+                    Text("15 seconds").tag(15)
+                    Text("30 seconds").tag(30)
+                    Text("1 minute").tag(60)
+                    Text("2 minutes").tag(120)
+                }
             }
         }
     }

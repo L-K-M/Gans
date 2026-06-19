@@ -25,14 +25,16 @@ enum CodeInjector {
 
     /// Reactivates `targetApp` and delivers `code` per `mode`. Returns whether it could
     /// inject keystrokes or only copy. Runs its keystroke work after a short delay so the
-    /// target app is frontmost first.
+    /// target app is frontmost first. When the code lands on the clipboard,
+    /// `clearClipboardAfter` (if set) schedules it to be wiped later.
     @discardableResult
     static func deliver(code: String, to targetApp: NSRunningApplication?, mode: DeliveryMode,
-                        alsoCopy: Bool, completion: ((Result) -> Void)? = nil) -> Result {
+                        alsoCopy: Bool, clearClipboardAfter: TimeInterval? = nil,
+                        completion: ((Result) -> Void)? = nil) -> Result {
         let canInject = hasAccessibilityPermission(prompt: false)
 
         if mode == .paste || alsoCopy || !canInject {
-            copyToClipboard(code)
+            copyToClipboard(code, clearAfter: clearClipboardAfter)
         }
 
         guard canInject else {
@@ -55,10 +57,22 @@ enum CodeInjector {
 
     // MARK: Clipboard
 
-    static func copyToClipboard(_ string: String) {
+    /// Copies `string` to the general pasteboard. If `clearAfter` is set, the code is
+    /// wiped after that delay — but only if the pasteboard hasn't changed since (so we
+    /// never clobber something the user copied afterwards).
+    static func copyToClipboard(_ string: String, clearAfter: TimeInterval? = nil) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(string, forType: .string)
+
+        guard let delay = clearAfter, delay > 0 else { return }
+        let changeCountAtCopy = pasteboard.changeCount
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            let pasteboard = NSPasteboard.general
+            // Only clear if our code is still the most recent thing on the clipboard.
+            guard pasteboard.changeCount == changeCountAtCopy else { return }
+            pasteboard.clearContents()
+        }
     }
 
     // MARK: Synthetic events

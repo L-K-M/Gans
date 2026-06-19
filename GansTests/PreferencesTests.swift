@@ -28,6 +28,28 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(reloaded.hotkey, custom)
     }
 
+    func testRecordUsageDeduplicatesOrdersAndPersists() {
+        let defaults = makeDefaults()
+        do {
+            let prefs = Preferences(defaults: defaults)
+            prefs.recordUsage("a")
+            prefs.recordUsage("b")
+            prefs.recordUsage("a") // re-using "a" moves it back to the front, no dupe
+            XCTAssertEqual(prefs.recentlyUsedIDs, ["a", "b"])
+        }
+        // Survives a reload from the same defaults.
+        XCTAssertEqual(Preferences(defaults: defaults).recentlyUsedIDs, ["a", "b"])
+    }
+
+    func testClipboardClearDefaultsAndDelay() {
+        let prefs = Preferences(defaults: makeDefaults())
+        XCTAssertTrue(prefs.clearClipboardEnabled)
+        XCTAssertEqual(prefs.clearClipboardSeconds, 30)
+        XCTAssertEqual(prefs.clipboardClearDelay, 30)
+        prefs.clearClipboardEnabled = false
+        XCTAssertNil(prefs.clipboardClearDelay)
+    }
+
     func testDeliveryModePersists() {
         let defaults = makeDefaults()
         do {

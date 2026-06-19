@@ -11,7 +11,7 @@ final class KeyablePanel: NSPanel {
 /// Owns the Quick Search experience: shows the floating panel, remembers the app that had
 /// focus, routes navigation keys, and on commit delivers the selected code into that app.
 @MainActor
-final class QuickSearchController {
+final class QuickSearchController: NSObject, NSWindowDelegate {
     let model = QuickSearchModel()
 
     private var panel: KeyablePanel?
@@ -28,6 +28,7 @@ final class QuickSearchController {
 
     init(preferences: Preferences) {
         self.preferences = preferences
+        super.init()
     }
 
     var isVisible: Bool { panel?.isVisible == true }
@@ -46,6 +47,7 @@ final class QuickSearchController {
         // Capture the app that currently has focus BEFORE we activate ourselves.
         previousApp = NSWorkspace.shared.frontmostApplication
 
+        model.recentIDs = preferences.recentlyUsedIDs
         model.setEntries(entriesProvider())
         model.reset()
 
@@ -83,6 +85,7 @@ final class QuickSearchController {
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.animationBehavior = .utilityWindow
+        panel.delegate = self
 
         let root = QuickSearchView(model: model) { [weak self] entry in
             self?.commit(entry)
@@ -118,6 +121,18 @@ final class QuickSearchController {
         removeKeyMonitor()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+
+            // ⌘1…⌘9 instantly commits the Nth visible result.
+            if event.modifierFlags.contains(.command),
+               let digit = event.charactersIgnoringModifiers.flatMap({ Int($0) }),
+               (1...9).contains(digit) {
+                let index = digit - 1
+                if self.model.results.indices.contains(index) {
+                    self.commit(self.model.results[index])
+                }
+                return nil
+            }
+
             switch Int(event.keyCode) {
             case kVK_DownArrow:
                 self.model.moveSelection(down: true); return nil
@@ -160,9 +175,19 @@ final class QuickSearchController {
     private func commit(_ entry: AuthEntry) {
         let code = entry.code()
         let target = previousApp
+        preferences.recordUsage(entry.id)
         hide()
         CodeInjector.deliver(code: code, to: target,
                              mode: preferences.deliveryMode,
-                             alsoCopy: preferences.alsoCopyWhenTyping)
+                             alsoCopy: preferences.alsoCopyWhenTyping,
+                             clearClipboardAfter: preferences.clipboardClearDelay)
+    }
+
+    // MARK: NSWindowDelegate
+
+    /// Dismiss like Spotlight when focus leaves the panel (click another app/window).
+    func windowDidResignKey(_ notification: Notification) {
+        guard isVisible else { return }
+        hide()
     }
 }

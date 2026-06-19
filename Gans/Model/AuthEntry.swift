@@ -57,6 +57,20 @@ struct AuthEntry: Identifiable, Equatable {
     func secondsRemaining(at time: Date = Date()) -> Int {
         TOTPGenerator.secondsRemaining(time: time, period: period)
     }
+
+    /// Whether the code rotates on a clock (TOTP/Steam). HOTP advances by counter, so it
+    /// has no time-based countdown.
+    var isTimeBased: Bool {
+        if case .hotp = kind { return false }
+        return true
+    }
+
+    /// Fraction of the current period still remaining (1 → just refreshed, 0 → expiring),
+    /// for a countdown indicator. Always 1 for non-time-based kinds.
+    func fractionRemaining(at time: Date = Date()) -> Double {
+        guard isTimeBased, period > 0 else { return 1 }
+        return Double(secondsRemaining(at: time)) / Double(period)
+    }
 }
 
 extension AuthEntry {
@@ -87,8 +101,11 @@ extension AuthEntry {
         }
 
         let algorithm = OTPAlgorithm(rawValueLenient: query["algorithm"])
-        let digits = Int(query["digits"] ?? "") ?? (typeString == "steam" ? 5 : 6)
-        let period = Int(query["period"] ?? "") ?? 30
+        // Clamp digits (1...9) so an oversized value can't overflow code generation, and
+        // keep the period positive so the TOTP window math stays sane.
+        let parsedDigits = Int(query["digits"] ?? "") ?? (typeString == "steam" ? 5 : 6)
+        let digits = min(max(parsedDigits, 1), 9)
+        let period = max(Int(query["period"] ?? "") ?? 30, 1)
 
         let kind: Kind
         switch typeString {

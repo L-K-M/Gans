@@ -117,7 +117,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     // MARK: Actions
 
     private func copy(_ entry: AuthEntry) {
-        CodeInjector.copyToClipboard(entry.code())
+        CodeInjector.copyToClipboard(entry.code(), clearAfter: preferences.clipboardClearDelay)
+        preferences.recordUsage(entry.id)
         flashCopied()
     }
 

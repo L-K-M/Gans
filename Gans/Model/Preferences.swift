@@ -21,9 +21,14 @@ final class Preferences: ObservableObject {
     private enum Key {
         static let hotkey = "quickSearchHotkey"
         static let deliveryMode = "deliveryMode"
-        static let copyOnMenuSelect = "copyOnMenuSelect"
         static let alsoCopyWhenTyping = "alsoCopyWhenTyping"
+        static let clearClipboardEnabled = "clearClipboardEnabled"
+        static let clearClipboardSeconds = "clearClipboardSeconds"
+        static let recentlyUsedIDs = "recentlyUsedIDs"
     }
+
+    /// How many recently-used entry ids to remember (for Quick Search ordering).
+    private static let recentLimit = 50
 
     @Published var hotkey: HotkeySpec {
         didSet { persist(hotkey, forKey: Key.hotkey) }
@@ -39,11 +44,45 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(alsoCopyWhenTyping, forKey: Key.alsoCopyWhenTyping) }
     }
 
+    /// Clear a copied code from the clipboard after a delay (only if it's still there).
+    @Published var clearClipboardEnabled: Bool {
+        didSet { defaults.set(clearClipboardEnabled, forKey: Key.clearClipboardEnabled) }
+    }
+
+    /// How long to wait before clearing a copied code (seconds).
+    @Published var clearClipboardSeconds: Int {
+        didSet { defaults.set(clearClipboardSeconds, forKey: Key.clearClipboardSeconds) }
+    }
+
+    /// Most-recently-used entry ids, most recent first. Drives Quick Search ordering.
+    @Published private(set) var recentlyUsedIDs: [String]
+
+    /// The clipboard-clear delay, or `nil` when the feature is off — what callers pass to
+    /// `CodeInjector`.
+    var clipboardClearDelay: TimeInterval? {
+        clearClipboardEnabled ? TimeInterval(clearClipboardSeconds) : nil
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.hotkey = Self.decode(HotkeySpec.self, from: defaults, key: Key.hotkey) ?? .default
         self.deliveryMode = DeliveryMode(rawValue: defaults.string(forKey: Key.deliveryMode) ?? "") ?? .type
         self.alsoCopyWhenTyping = defaults.object(forKey: Key.alsoCopyWhenTyping) as? Bool ?? true
+        self.clearClipboardEnabled = defaults.object(forKey: Key.clearClipboardEnabled) as? Bool ?? true
+        self.clearClipboardSeconds = (defaults.object(forKey: Key.clearClipboardSeconds) as? Int) ?? 30
+        self.recentlyUsedIDs = defaults.stringArray(forKey: Key.recentlyUsedIDs) ?? []
+    }
+
+    // MARK: Recently used
+
+    /// Records that `id` was just used: moves it to the front, de-duplicated and capped.
+    func recordUsage(_ id: String) {
+        var ids = recentlyUsedIDs
+        ids.removeAll { $0 == id }
+        ids.insert(id, at: 0)
+        if ids.count > Self.recentLimit { ids = Array(ids.prefix(Self.recentLimit)) }
+        recentlyUsedIDs = ids
+        defaults.set(ids, forKey: Key.recentlyUsedIDs)
     }
 
     // MARK: Codable helpers

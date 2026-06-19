@@ -100,6 +100,11 @@ private struct QuickSearchRow: View {
                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(isSelected ? Color.white : Color.primary)
+            if entry.isTimeBased {
+                CountdownRing(fraction: entry.fractionRemaining(at: tick),
+                              seconds: entry.secondsRemaining(at: tick),
+                              onAccent: isSelected)
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: 44)
@@ -108,6 +113,36 @@ private struct QuickSearchRow: View {
                 .fill(isSelected ? Color.accentColor : Color.clear)
         )
         .foregroundStyle(isSelected ? Color.white : Color.primary)
+    }
+}
+
+/// A small circular countdown that depletes over the code's period and warms to amber/red
+/// as expiry nears, so you can tell at a glance whether to wait for the next code.
+private struct CountdownRing: View {
+    /// 1 = full period remaining, 0 = expiring now.
+    let fraction: Double
+    let seconds: Int
+    /// True when drawn on the selected (accent-filled) row, so colors stay legible.
+    let onAccent: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke((onAccent ? Color.white : Color.secondary).opacity(0.25), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: max(0.001, min(fraction, 1)))
+                .stroke(ringColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: 16, height: 16)
+        .animation(.linear(duration: 0.25), value: fraction)
+        .accessibilityLabel("\(seconds) seconds remaining")
+    }
+
+    private var ringColor: Color {
+        if seconds <= 5 { return .red }
+        if seconds <= 10 { return .orange }
+        return onAccent ? .white : .accentColor
     }
 }
 

@@ -49,6 +49,17 @@ final class OtpAuthURITests: XCTestCase {
         XCTAssertNil(AuthEntry.parse(uri: "https://example.com", id: "7"))
     }
 
+    func testDigitsAndPeriodClampedToSafeRange() {
+        // An oversized digit count must be clamped (10^digits would overflow UInt32), and
+        // a zero/negative period must be coerced to a sane value.
+        let uri = "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=12&period=0"
+        let entry = AuthEntry.parse(uri: uri, id: "10")
+        XCTAssertEqual(entry?.digits, 9)
+        XCTAssertEqual(entry?.period, 1)
+        // Generating a code must not crash and must respect the clamped width.
+        XCTAssertEqual(entry?.code(at: Date(timeIntervalSince1970: 59)).count, 9)
+    }
+
     func testDisplayName() {
         let withBoth = AuthEntry.parse(uri: "otpauth://totp/Iss:acct?secret=JBSWY3DPEHPK3PXP", id: "8")
         XCTAssertEqual(withBoth?.displayName, "Iss (acct)")

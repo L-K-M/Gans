@@ -50,6 +50,10 @@ enum TOTPGenerator {
 
     /// A counter-based code (HOTP, and the engine behind TOTP).
     static func code(secret: [UInt8], counter: UInt64, digits: Int, algorithm: OTPAlgorithm) -> String {
+        // Clamp to a safe range: RFC 4226/6238 use 6–8 digits, and 10^digits must stay
+        // within UInt32 (10^10 overflows and would trap). A hostile/malformed otpauth URI
+        // can set any digit count, so defend here regardless of what the parser allowed.
+        let digits = min(max(digits, 1), 9)
         let digest = hmac(counter: counter, secret: secret, algorithm: algorithm)
         let truncated = truncate(digest)
         let modulus = UInt32(pow(10.0, Double(digits)))
