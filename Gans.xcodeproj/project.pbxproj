@@ -9,8 +9,10 @@
 /* Begin PBXBuildFile section */
 		BB0000000000000000000101 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000000000000000000111 /* Clibsodium */; };
 		BB0000000000000000000102 /* BigInt in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000000000000000000112 /* BigInt */; };
+		BB0000000000000000000103 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000000000000000000113 /* Sodium */; };
 		BB0000000000000000000201 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000000000000000000211 /* Clibsodium */; };
 		BB0000000000000000000202 /* BigInt in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000000000000000000212 /* BigInt */; };
+		BB0000000000000000000203 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000000000000000000213 /* Sodium */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +42,7 @@
 			files = (
 				BB0000000000000000000101 /* Clibsodium in Frameworks */,
 				BB0000000000000000000102 /* BigInt in Frameworks */,
+				BB0000000000000000000103 /* Sodium in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -49,6 +52,7 @@
 			files = (
 				BB0000000000000000000201 /* Clibsodium in Frameworks */,
 				BB0000000000000000000202 /* BigInt in Frameworks */,
+				BB0000000000000000000203 /* Sodium in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -95,6 +99,7 @@
 			packageProductDependencies = (
 				BB0000000000000000000111 /* Clibsodium */,
 				BB0000000000000000000112 /* BigInt */,
+				BB0000000000000000000113 /* Sodium */,
 			);
 			productName = Gans;
 			productReference = AA0000000000000000000006 /* Gans.app */;
@@ -120,6 +125,7 @@
 			packageProductDependencies = (
 				BB0000000000000000000211 /* Clibsodium */,
 				BB0000000000000000000212 /* BigInt */,
+				BB0000000000000000000213 /* Sodium */,
 			);
 			productName = GansTests;
 			productReference = AA0000000000000000000007 /* GansTests.xctest */;
@@ -437,6 +443,11 @@
 			package = BB0000000000000000000122 /* XCRemoteSwiftPackageReference "BigInt" */;
 			productName = BigInt;
 		};
+		BB0000000000000000000113 /* Sodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BB0000000000000000000121 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Sodium;
+		};
 		BB0000000000000000000211 /* Clibsodium */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = BB0000000000000000000121 /* XCRemoteSwiftPackageReference "swift-sodium" */;
@@ -446,6 +457,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BB0000000000000000000122 /* XCRemoteSwiftPackageReference "BigInt" */;
 			productName = BigInt;
+		};
+		BB0000000000000000000213 /* Sodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BB0000000000000000000121 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Sodium;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
