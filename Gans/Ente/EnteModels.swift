@@ -17,7 +17,7 @@ struct SRPAttributes: Decodable {
 }
 
 /// The account key hierarchy needed to unwrap the master key + token.
-struct KeyAttributes: Decodable {
+struct KeyAttributes: Decodable, Equatable {
     let kekSalt: String
     let encryptedKey: String
     let keyDecryptionNonce: String
@@ -29,7 +29,7 @@ struct KeyAttributes: Decodable {
 }
 
 /// Returned by `verify-session`, `verify-email`, and `two-factor/verify`.
-struct AuthorizationResponse: Decodable {
+struct AuthorizationResponse: Decodable, Equatable {
     let id: Int64?
     let keyAttributes: KeyAttributes?
     let encryptedToken: String?
