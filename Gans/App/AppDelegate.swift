@@ -49,6 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The passkey flow redirects the browser to `ente-cli://passkey` when the ceremony
+    /// finishes. We register that scheme purely so this redirect brings Gans forward; the
+    /// token is still retrieved by polling, so there's nothing to parse from the URL.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     // MARK: Wiring
 
     private func wireStatusItem() {
