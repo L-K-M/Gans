@@ -52,8 +52,9 @@ enum KeyUnwrap {
         if let encryptedToken = authorization.encryptedToken,
            let encryptedTokenBytes = Base64.decodeStandard(encryptedToken) {
             let tokenBytes = try EnteCrypto.sealedBoxOpen(cipherText: encryptedTokenBytes, publicKey: publicKey, secretKey: secretKey)
-            // Ente issues the auth token as URL-safe base64 for the X-Auth-Token header.
-            token = Base64.encodeURLSafe(tokenBytes)
+            // Ente issues the auth token as URL-safe base64 *with padding* for the
+            // X-Auth-Token header; the server matches it as a literal string.
+            token = Base64.encodeURLSafePadded(tokenBytes)
         } else if let plain = authorization.token, !plain.isEmpty {
             token = plain
         } else {

@@ -29,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // A menu-bar agent has no menu by default; install one so standard editing
+        // shortcuts (⌘X/⌘C/⌘V/⌘A) work in our text fields.
+        NSApp.mainMenu = MainMenu.build()
+
         wireStatusItem()
         wireQuickSearch()
         wireSettings()
@@ -37,7 +41,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateChecker.start()
         observeVault()
 
-        Task { await vault.restore() }
+        // Restore the session; if there's nobody signed in, open the sign-in window so a
+        // fresh launch is actionable rather than a silent menu-bar icon.
+        Task {
+            await vault.restore()
+            if !vault.isSignedIn { loginWindow.show() }
+        }
     }
 
     // MARK: Wiring

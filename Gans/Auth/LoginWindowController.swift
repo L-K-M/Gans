@@ -22,7 +22,12 @@ final class LoginWindowController: NSObject, NSWindowDelegate {
         }
 
         let model = LoginViewModel(vault: vault, api: api)
-        model.onSignedIn = { [weak self] in self?.close() }
+        model.onSignedIn = { [weak self] in
+            // Pull focus back to Gans once login finishes — important after the passkey
+            // flow, which leaves the browser frontmost.
+            NSApp.activate(ignoringOtherApps: true)
+            self?.close()
+        }
 
         let hosting = NSHostingController(rootView: LoginView(model: model))
         let window = NSWindow(contentViewController: hosting)

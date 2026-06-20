@@ -31,6 +31,15 @@ enum Base64 {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    /// URL-safe base64 **with** `=` padding. Ente's auth token is exactly this form, and
+    /// the server looks the token up as a verbatim string (no decoding), so the padding
+    /// must be preserved — dropping it makes every authenticated request 401.
+    static func encodeURLSafePadded(_ bytes: [UInt8]) -> String {
+        Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+    }
+
     /// Appends `=` until the length is a multiple of 4 so Foundation will accept input
     /// that arrived without padding.
     private static func pad(_ string: String) -> String {
