@@ -45,9 +45,9 @@ struct QuickSearchView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    ForEach(Array(model.results.enumerated()), id: \.element.id) { index, entry in
-                        QuickSearchRow(entry: entry, tick: model.tick, isSelected: index == model.selectedIndex)
-                            .id(index)
+                    ForEach(model.results) { entry in
+                        QuickSearchRow(entry: entry, tick: model.tick, isSelected: entry.id == model.selectedID)
+                            .id(entry.id)
                             .contentShape(Rectangle())
                             .onTapGesture { onCommit(entry) }
                     }
@@ -55,8 +55,9 @@ struct QuickSearchView: View {
                 .padding(8)
             }
             .frame(maxHeight: 320)
-            .onChange(of: model.selectedIndex) { newValue in
-                withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(newValue, anchor: .center) }
+            .onChange(of: model.selectedID) { newValue in
+                guard let id = newValue else { return }
+                withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(id, anchor: .center) }
             }
         }
     }

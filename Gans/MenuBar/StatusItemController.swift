@@ -125,9 +125,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if appLock.isEnabled {
             menu.addItem(ActionMenuItem(title: "Lock Now") { [weak self] in self?.appLock.lockIfEnabled() })
         }
-        menu.addItem(.separator())
-        addCommonFooter(menu)
         menu.addItem(ActionMenuItem(title: "Sign Out") { [weak self] in self?.vault.signOut() })
+        menu.addItem(.separator())
+        addCommonFooter(menu) // Settings, Check for Updates, then Quit last.
     }
 
     private func addCommonFooter(_ menu: NSMenu) {
