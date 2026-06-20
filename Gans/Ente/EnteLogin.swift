@@ -23,13 +23,20 @@ actor EnteLogin {
         case needsEmailCode
         /// Account-level 2FA; call `verifyTwoFactor` with `sessionID`.
         case needsTwoFactor(sessionID: String)
-        /// Passkey-only accounts require the browser flow.
-        case needsPasskey(url: String?)
+        /// The account's second factor is a passkey: open the verification URL in a
+        /// browser, then poll for the token. Carries what both steps need.
+        case needsPasskey(passkeySessionID: String, accountsURL: String)
     }
 
     enum LoginError: LocalizedError {
         case srpUnavailable
-        var errorDescription: String? { "SRP login isn't available for this account." }
+        case passkeyTimedOut
+        var errorDescription: String? {
+            switch self {
+            case .srpUnavailable: return "SRP login isn't available for this account."
+            case .passkeyTimedOut: return "Timed out waiting for passkey authentication. Please try again."
+            }
+        }
     }
 
     // MARK: SRP path
@@ -103,8 +110,53 @@ actor EnteLogin {
     // MARK: Helpers
 
     private func step(for auth: AuthorizationResponse) -> Step {
-        if auth.requiresPasskey { return .needsPasskey(url: auth.accountsUrl) }
+        if auth.requiresPasskey, let sessionID = auth.passkeySessionID {
+            return .needsPasskey(passkeySessionID: sessionID,
+                                 accountsURL: auth.accountsUrl ?? "https://accounts.ente.io")
+        }
         if auth.requiresTwoFactor, let sessionID = auth.twoFactorSessionID { return .needsTwoFactor(sessionID: sessionID) }
         return .authorized(auth)
+    }
+
+    // MARK: Passkey (second factor)
+
+    /// The accounts page that runs the WebAuthn passkey ceremony for this login session.
+    /// Mirrors Ente's CLI: `…/passkeys/verify?passkeySessionID=…&redirect=…&clientPackage=…`.
+    /// We don't handle the redirect ourselves — `redirect` only has to be a value the
+    /// accounts page whitelists (`ente-cli://passkey` is), because we retrieve the token by
+    /// polling `get-token` rather than via the browser redirect.
+    static func passkeyVerificationURL(accountsURL: String, passkeySessionID: String,
+                                       clientPackage: String) -> URL? {
+        let base = accountsURL.isEmpty ? "https://accounts.ente.io" : accountsURL
+        guard var components = URLComponents(string: base) else { return nil }
+        components.path = "/passkeys/verify"
+        components.queryItems = [
+            URLQueryItem(name: "passkeySessionID", value: passkeySessionID),
+            URLQueryItem(name: "redirect", value: "ente-cli://passkey"),
+            URLQueryItem(name: "clientPackage", value: clientPackage),
+        ]
+        return components.url
+    }
+
+    /// Polls `get-token` until the browser passkey ceremony completes and the server has an
+    /// authorization for this session, then returns the authorized step. Throws on timeout.
+    /// Honors task cancellation so the UI can abort the wait.
+    func waitForPasskeyToken(passkeySessionID: String,
+                             timeout: TimeInterval = 180,
+                             pollInterval: TimeInterval = 2) async throws -> Step {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            try Task.checkCancellation()
+            // Until the ceremony finishes, this 404s / lacks key attributes; keep waiting.
+            if let auth = try? await api.get(AuthorizationResponse.self,
+                                             path: "users/two-factor/passkeys/get-token",
+                                             query: [URLQueryItem(name: "sessionID", value: passkeySessionID)],
+                                             authenticated: false),
+               auth.keyAttributes != nil, auth.encryptedToken != nil || auth.token != nil {
+                return .authorized(auth)
+            }
+            if Date() >= deadline { throw LoginError.passkeyTimedOut }
+            try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+        }
     }
 }

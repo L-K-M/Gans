@@ -122,7 +122,10 @@ the token is **URL‑safe** base64.
 
 **2FA branch (either path):** if the response carries `twoFactorSessionID`,
 `POST /users/two-factor/verify {sessionID, code}` → final `AuthorizationResponse`.
-A `passkeySessionID` requires the browser flow and is surfaced as an actionable error.
+A `passkeySessionID` triggers the passkey flow: open
+`‹accountsUrl›/passkeys/verify?passkeySessionID=…&redirect=ente-cli://passkey&clientPackage=…`
+in the browser, then poll `GET /users/two-factor/passkeys/get-token?sessionID=…` until the
+ceremony completes and the server returns the `AuthorizationResponse`.
 
 ### 3.2 Key unwrap (libsodium)
 ```

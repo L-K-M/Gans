@@ -41,7 +41,7 @@ struct LoginView: View {
         case .credentials: credentials
         case .emailCode: codeEntry(title: "Enter the code we emailed you", help: "Check \(model.email).")
         case .twoFactor: codeEntry(title: "Two-factor code", help: "Enter the 6-digit code from your authenticator.")
-        case .passkeyRequired(let url): passkey(url: url)
+        case .passkey: passkey
         }
     }
 
@@ -85,17 +85,31 @@ struct LoginView: View {
         }
     }
 
-    private func passkey(url: String?) -> some View {
+    private var passkey: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("This account uses a passkey")
                 .font(.subheadline.weight(.medium))
-            Text("Passkey sign-in needs a browser. Open Ente to authenticate, then sign in here with your password or an email code.")
+            Text("Authenticate with your passkey in the browser. Gans finishes signing you in automatically once you're done — just come back to this window.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
-                if let url, let link = URL(string: url) {
-                    Button("Open Ente") { NSWorkspace.shared.open(link) }
+                Button(action: {
+                    if let url = model.passkeyVerificationURL { NSWorkspace.shared.open(url) }
+                    model.waitForPasskey()
+                }) {
+                    if model.isBusy {
+                        HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Waiting…") }
+                    } else {
+                        Text("Authenticate with Passkey")
+                    }
                 }
-                Button("Back") { model.restart() }
+                .keyboardShortcut(.defaultAction)
+                .disabled(model.isBusy)
+
+                Button(model.isBusy ? "Cancel" : "Back") { model.restart() }
+            }
+            if model.isBusy {
+                Text("Waiting for you to finish in your browser. If the page didn't open, click again.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }

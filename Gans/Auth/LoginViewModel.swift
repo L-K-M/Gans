@@ -10,7 +10,7 @@ final class LoginViewModel: ObservableObject {
         case credentials
         case emailCode
         case twoFactor(sessionID: String)
-        case passkeyRequired(url: String?)
+        case passkey(passkeySessionID: String, accountsURL: String)
     }
 
     @Published var email = ""
@@ -75,9 +75,32 @@ final class LoginViewModel: ObservableObject {
     }
 
     func restart() {
+        currentTask?.cancel()
+        currentTask = nil
+        isBusy = false
         stage = .credentials
         code = ""
         errorMessage = nil
+    }
+
+    // MARK: Passkey
+
+    /// The browser URL that runs the passkey ceremony for the current passkey stage.
+    var passkeyVerificationURL: URL? {
+        guard case .passkey(let sessionID, let accountsURL) = stage else { return nil }
+        return EnteLogin.passkeyVerificationURL(accountsURL: accountsURL,
+                                                passkeySessionID: sessionID,
+                                                clientPackage: EnteAPI.clientPackage)
+    }
+
+    /// Begins waiting for the browser passkey ceremony to finish (polls for the token).
+    /// The view opens `passkeyVerificationURL` and then calls this.
+    func waitForPasskey() {
+        guard case .passkey(let sessionID, _) = stage else { return }
+        run {
+            let step = try await self.login.waitForPasskeyToken(passkeySessionID: sessionID)
+            try await self.handle(step)
+        }
     }
 
     // MARK: Step handling
@@ -93,22 +116,27 @@ final class LoginViewModel: ObservableObject {
         case .needsTwoFactor(let sessionID):
             code = ""
             stage = .twoFactor(sessionID: sessionID)
-        case .needsPasskey(let url):
-            stage = .passkeyRequired(url: url)
+        case .needsPasskey(let passkeySessionID, let accountsURL):
+            stage = .passkey(passkeySessionID: passkeySessionID, accountsURL: accountsURL)
         }
     }
 
     private var trimmedEmail: String { email.trimmingCharacters(in: .whitespaces) }
+
+    /// The in-flight login task, tracked so `restart()` can cancel a long passkey wait.
+    private var currentTask: Task<Void, Never>?
 
     /// Runs an async task with busy/error bookkeeping.
     private func run(_ work: @escaping () async throws -> Void) {
         guard !isBusy else { return }
         isBusy = true
         errorMessage = nil
-        Task { @MainActor in
-            defer { isBusy = false }
+        currentTask = Task { @MainActor in
+            defer { isBusy = false; currentTask = nil }
             do {
                 try await work()
+            } catch is CancellationError {
+                // Deliberately aborted (e.g. the user pressed Back) — not an error.
             } catch {
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
