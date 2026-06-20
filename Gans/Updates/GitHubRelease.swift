@@ -12,21 +12,6 @@ struct GitHubRelease: Decodable {
     let prerelease: Bool
     let draft: Bool
     let publishedAt: Date?
-    let assets: [Asset]
-
-    struct Asset: Decodable {
-        let name: String
-        let contentType: String
-        let size: Int
-        let browserDownloadURL: URL
-
-        enum CodingKeys: String, CodingKey {
-            case name
-            case contentType = "content_type"
-            case size
-            case browserDownloadURL = "browser_download_url"
-        }
-    }
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
@@ -34,20 +19,6 @@ struct GitHubRelease: Decodable {
         case htmlURL = "html_url"
         case prerelease, draft
         case publishedAt = "published_at"
-        case assets
-    }
-
-    /// The best asset to download: a disk image, then a zip, then a pkg, else the
-    /// first uploaded asset. `nil` if the release has no assets. (GitHub's
-    /// auto-generated "Source code" archives aren't in `assets`, so they're never
-    /// picked.)
-    var preferredAsset: Asset? {
-        let preference = ["dmg", "zip", "pkg"]
-        func rank(_ asset: Asset) -> Int {
-            let ext = (asset.name as NSString).pathExtension.lowercased()
-            return preference.firstIndex(of: ext) ?? preference.count
-        }
-        return assets.min { rank($0) < rank($1) }
     }
 
     /// A trimmed, length-capped form of the release body, suitable for an alert's

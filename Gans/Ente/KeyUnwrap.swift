@@ -2,10 +2,16 @@ import Foundation
 
 /// The decrypted material from a successful login.
 struct UnwrappedKeys {
-    let masterKey: [UInt8]
-    let secretKey: [UInt8]
+    var masterKey: [UInt8]
+    var secretKey: [UInt8]
     /// URL-safe base64 auth token for the `X-Auth-Token` header.
     let token: String
+
+    /// Scrubs the key bytes once the caller has finished unwrapping with them.
+    mutating func wipe() {
+        EnteCrypto.wipe(&masterKey)
+        EnteCrypto.wipe(&secretKey)
+    }
 }
 
 /// Turns an `AuthorizationResponse` + the account password into usable keys + token.
@@ -38,10 +44,11 @@ enum KeyUnwrap {
         guard let publicKey = Base64.decodeStandard(keyAttributes.publicKey) else { throw UnwrapError.badField("publicKey") }
 
         // KEK from password via Argon2id (parameters come from the key attributes).
-        let kek = try EnteCrypto.deriveKeyEncryptionKey(
+        var kek = try EnteCrypto.deriveKeyEncryptionKey(
             password: password, salt: kekSalt,
             memLimit: keyAttributes.memLimit, opsLimit: keyAttributes.opsLimit
         )
+        defer { EnteCrypto.wipe(&kek) }
 
         let masterKey = try EnteCrypto.secretBoxOpen(cipherText: encryptedKey, nonce: keyNonce, key: kek)
         let secretKey = try EnteCrypto.secretBoxOpen(cipherText: encryptedSecretKey, nonce: secretKeyNonce, key: masterKey)

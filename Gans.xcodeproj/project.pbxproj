@@ -408,16 +408,16 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/jedisct1/swift-sodium";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.11.0;
+				kind = exactVersion;
+				version = 0.11.0;
 			};
 		};
 		BB0000000000000000000122 /* XCRemoteSwiftPackageReference "BigInt" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/attaswift/BigInt";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 5.7.0;
+				kind = exactVersion;
+				version = 5.7.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

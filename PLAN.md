@@ -83,7 +83,7 @@ Gans/
 │   └── Logging.swift              os.Logger wrapper
 ├── Updates/                       ported verbatim from Zap (GitHub release checker)
 │   ├── GitHubRelease.swift  GitHubReleaseClient.swift  SemanticVersion.swift
-│   ├── UpdateChecker.swift  UpdateDownloader.swift
+│   ├── UpdateChecker.swift
 └── Resources/Assets.xcassets      AppIcon + AccentColor
 
 GansTests/

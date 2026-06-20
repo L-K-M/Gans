@@ -54,7 +54,9 @@ enum EnteSRP {
         private let a: BigUInt
         private let A: BigUInt
         private let x: BigUInt
-        private var cachedK: BigUInt?
+        /// K = H(PAD(S)) kept as the raw 32-byte digest. (Storing it as a BigUInt would
+        /// strip any leading zero bytes and make M2 verification fail ~1/256 of the time.)
+        private var cachedK: Data?
 
         init(a: BigUInt, A: BigUInt, x: BigUInt) {
             self.a = a
@@ -80,7 +82,7 @@ enum EnteSRP {
             let exponent = a + u * x
             let S = base.power(exponent, modulus: N)
 
-            cachedK = EnteSRP.hashInt(EnteSRP.pad(S))
+            cachedK = EnteSRP.hash(EnteSRP.pad(S))
 
             // M1 hashes the minimal big-endian bytes of A, B, S (matches the server).
             let m1 = EnteSRP.hash(A.serialize() + B.serialize() + S.serialize())
@@ -92,14 +94,20 @@ enum EnteSRP {
             guard let k = cachedK,
                   let m1Bytes = Base64.decodeStandard(m1Base64),
                   let m2Bytes = Base64.decodeStandard(m2Base64) else { return false }
-            let expected = EnteSRP.hash(A.serialize() + Data(m1Bytes) + k.serialize())
-            return [UInt8](expected) == m2Bytes
+            let expected = EnteSRP.hash(A.serialize() + Data(m1Bytes) + k)
+            return EnteSRP.constantTimeEquals([UInt8](expected), m2Bytes)
         }
     }
 
     enum SRPError: LocalizedError {
         case badServerValue
-        var errorDescription: String? { "The server's SRP response was invalid." }
+        case randomGenerationFailed
+        var errorDescription: String? {
+            switch self {
+            case .badServerValue: return "The server's SRP response was invalid."
+            case .randomGenerationFailed: return "Couldn't generate secure random data for login."
+            }
+        }
     }
 
     /// Begins a handshake: derives x and the ephemeral A from the identity, salt, and the
@@ -109,7 +117,7 @@ enum EnteSRP {
         let inner = hash(Data(identityBytes) + Data([0x3a]) + Data(loginKey)) // H(I | ":" | P)
         let x = hashInt(Data(salt) + inner)                                    // H(salt | inner)
 
-        let a = randomExponent()
+        let a = try randomExponent()
         let A = g.power(a, modulus: N)
         return Session(a: a, A: A, x: x)
     }
@@ -135,10 +143,21 @@ enum EnteSRP {
         return Data(repeating: 0, count: byteLength - bytes.count) + bytes
     }
 
-    private static func randomExponent() -> BigUInt {
+    private static func randomExponent() throws -> BigUInt {
         var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw SRPError.randomGenerationFailed
+        }
         let value = BigUInt(Data(bytes)) % N
         return value == 0 ? BigUInt(1) : value
+    }
+
+    /// Length-checked constant-time byte comparison, so verifying the server proof doesn't
+    /// leak via timing.
+    private static func constantTimeEquals(_ lhs: [UInt8], _ rhs: [UInt8]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        var difference: UInt8 = 0
+        for index in 0..<lhs.count { difference |= lhs[index] ^ rhs[index] }
+        return difference == 0
     }
 }
