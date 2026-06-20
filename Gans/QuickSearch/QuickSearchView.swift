@@ -46,7 +46,9 @@ struct QuickSearchView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(model.results) { entry in
-                        QuickSearchRow(entry: entry, tick: model.tick, isSelected: entry.id == model.selectedID)
+                        QuickSearchRow(entry: entry, tick: model.tick,
+                                       isSelected: entry.id == model.selectedID,
+                                       showCode: model.showCodes)
                             .id(entry.id)
                             .contentShape(Rectangle())
                             .onTapGesture { onCommit(entry) }
@@ -82,6 +84,13 @@ private struct QuickSearchRow: View {
     let entry: AuthEntry
     let tick: Date
     let isSelected: Bool
+    /// When false, the code is masked (Quick Search just types it on commit).
+    let showCode: Bool
+
+    /// A dot mask sized to the code, so a hidden row still reads as "a code lives here".
+    private var maskedCode: String {
+        String(repeating: "•", count: max(entry.digits, 4))
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -97,7 +106,7 @@ private struct QuickSearchRow: View {
                 }
             }
             Spacer()
-            Text(entry.formattedCode(at: tick))
+            Text(showCode ? entry.formattedCode(at: tick) : maskedCode)
                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(isSelected ? Color.white : Color.primary)

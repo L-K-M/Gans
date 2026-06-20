@@ -21,10 +21,15 @@ final class AppLock: ObservableObject {
 
     var isEnabled: Bool { preferences.requireUnlock }
 
-    /// Engage the lock if the feature is on. Call at launch (when a session exists) and
-    /// from "Lock Now".
+    /// Engage the lock if the feature is on. Call at launch (when a session exists).
     func lockIfEnabled() {
         if preferences.requireUnlock { isLocked = true }
+    }
+
+    /// Lock immediately, regardless of the auto-lock setting — the manual "Lock Now"
+    /// action. Unlocking still requires Touch ID / password.
+    func lock() {
+        isLocked = true
     }
 
     /// Prompt for Touch ID / device password and unlock on success. If the device has no

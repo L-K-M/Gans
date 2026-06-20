@@ -67,6 +67,7 @@ struct SettingsView: View {
                     Text(mode.label).tag(mode)
                 }
             }
+            Toggle("Show codes in Quick Search", isOn: $preferences.showCodesInQuickSearch)
             if preferences.deliveryMode == .type {
                 Toggle("Also copy to clipboard", isOn: $preferences.alsoCopyWhenTyping)
             }

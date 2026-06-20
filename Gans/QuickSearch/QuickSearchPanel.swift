@@ -54,6 +54,7 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
         // Capture the app that currently has focus BEFORE we activate ourselves.
         previousApp = NSWorkspace.shared.frontmostApplication
 
+        model.showCodes = preferences.showCodesInQuickSearch
         model.recentIDs = preferences.recentlyUsedIDs
         model.setEntries(entriesProvider())
         model.reset()

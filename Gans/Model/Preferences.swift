@@ -26,6 +26,7 @@ final class Preferences: ObservableObject {
         static let clearClipboardSeconds = "clearClipboardSeconds"
         static let recentlyUsedIDs = "recentlyUsedIDs"
         static let requireUnlock = "requireUnlock"
+        static let showCodesInQuickSearch = "showCodesInQuickSearch"
     }
 
     /// How many recently-used entry ids to remember (for Quick Search ordering).
@@ -60,6 +61,12 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(requireUnlock, forKey: Key.requireUnlock) }
     }
 
+    /// Reveal the live code in each Quick Search row. Off by default — Quick Search just
+    /// types the selected code without ever displaying it.
+    @Published var showCodesInQuickSearch: Bool {
+        didSet { defaults.set(showCodesInQuickSearch, forKey: Key.showCodesInQuickSearch) }
+    }
+
     /// Most-recently-used entry ids, most recent first. Drives Quick Search ordering.
     @Published private(set) var recentlyUsedIDs: [String]
 
@@ -77,6 +84,7 @@ final class Preferences: ObservableObject {
         self.clearClipboardEnabled = defaults.object(forKey: Key.clearClipboardEnabled) as? Bool ?? true
         self.clearClipboardSeconds = (defaults.object(forKey: Key.clearClipboardSeconds) as? Int) ?? 30
         self.requireUnlock = defaults.object(forKey: Key.requireUnlock) as? Bool ?? false
+        self.showCodesInQuickSearch = defaults.object(forKey: Key.showCodesInQuickSearch) as? Bool ?? false
         self.recentlyUsedIDs = defaults.stringArray(forKey: Key.recentlyUsedIDs) ?? []
     }
 

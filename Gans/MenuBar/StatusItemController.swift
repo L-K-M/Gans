@@ -122,9 +122,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(ActionMenuItem(title: "Refresh Now") { [weak self] in
             Task { await self?.vault.refresh() }
         })
-        if appLock.isEnabled {
-            menu.addItem(ActionMenuItem(title: "Lock Now") { [weak self] in self?.appLock.lockIfEnabled() })
-        }
+        menu.addItem(ActionMenuItem(title: "Lock Now") { [weak self] in self?.appLock.lock() })
         menu.addItem(ActionMenuItem(title: "Sign Out") { [weak self] in self?.vault.signOut() })
         menu.addItem(.separator())
         addCommonFooter(menu) // Settings, Check for Updates, then Quit last.

@@ -19,6 +19,9 @@ final class QuickSearchModel: ObservableObject {
     /// Bumped on every `code(at:)`-relevant tick so rows refresh their displayed code.
     @Published var tick: Date = Date()
 
+    /// Whether rows reveal the live code (off by default — codes are masked and typed).
+    @Published var showCodes: Bool = false
+
     private var allEntries: [AuthEntry] = []
 
     /// Most-recently-used entry ids (most recent first), used to bias result ordering.
