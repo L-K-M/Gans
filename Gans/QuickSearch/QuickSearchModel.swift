@@ -6,7 +6,7 @@ import Combine
 /// list and handles commit.
 final class QuickSearchModel: ObservableObject {
     @Published var query: String = "" {
-        didSet { recomputeResults() }
+        didSet { recompute(resetSelection: true) }
     }
     @Published private(set) var results: [AuthEntry] = []
     @Published var selectedIndex: Int = 0
@@ -18,18 +18,17 @@ final class QuickSearchModel: ObservableObject {
 
     /// Most-recently-used entry ids (most recent first), used to bias result ordering.
     var recentIDs: [String] = [] {
-        didSet { recomputeResults() }
+        didSet { recompute(resetSelection: false) }
     }
 
     func setEntries(_ entries: [AuthEntry]) {
         allEntries = entries
-        recomputeResults()
+        recompute(resetSelection: false)
     }
 
     func reset() {
         query = ""
-        selectedIndex = 0
-        recomputeResults()
+        recompute(resetSelection: true)
     }
 
     var selectedEntry: AuthEntry? {
@@ -43,8 +42,13 @@ final class QuickSearchModel: ObservableObject {
         }
     }
 
-    private func recomputeResults() {
+    /// Recomputes the filtered results. On a query change we always re-anchor the selection
+    /// to the top match (so the best result is highlighted and Enter picks it); on a
+    /// background refresh we keep the current selection if it's still in range.
+    private func recompute(resetSelection: Bool) {
         results = SearchFilter.filter(allEntries, query: query, recentIDs: recentIDs)
-        if !results.indices.contains(selectedIndex) { selectedIndex = 0 }
+        if resetSelection || !results.indices.contains(selectedIndex) {
+            selectedIndex = 0
+        }
     }
 }

@@ -87,10 +87,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 item.isEnabled = false
                 menu.addItem(item)
             } else {
-                let now = Date()
+                // Show only the name — never the live code — and copy it on click.
                 for entry in entries {
-                    let title = "\(entry.displayName)    \(entry.formattedCode(at: now))"
-                    menu.addItem(ActionMenuItem(title: title) { [weak self] in
+                    menu.addItem(ActionMenuItem(title: entry.displayName) { [weak self] in
                         self?.copy(entry)
                     })
                 }
