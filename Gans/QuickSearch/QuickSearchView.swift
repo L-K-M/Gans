@@ -92,6 +92,12 @@ private struct QuickSearchRow: View {
         String(repeating: "•", count: max(entry.digits, 4))
     }
 
+    /// Foreground that stays legible on the accent-filled selection — black or white,
+    /// whichever genuinely contrasts with the accent (the accent can be light, e.g. lime).
+    private var primaryForeground: Color {
+        isSelected ? Color.accentColor.contrastingForeground : .primary
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
@@ -101,7 +107,7 @@ private struct QuickSearchRow: View {
                 if !entry.account.isEmpty && !entry.issuer.isEmpty {
                     Text(entry.account)
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isSelected ? primaryForeground.opacity(0.85) : Color.secondary)
                         .lineLimit(1)
                 }
             }
@@ -109,11 +115,11 @@ private struct QuickSearchRow: View {
             Text(showCode ? entry.formattedCode(at: tick) : maskedCode)
                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .foregroundStyle(primaryForeground)
             if entry.isTimeBased {
                 CountdownRing(fraction: entry.fractionRemaining(at: tick),
                               seconds: entry.secondsRemaining(at: tick),
-                              onAccent: isSelected)
+                              tint: isSelected ? primaryForeground : .accentColor)
             }
         }
         .padding(.horizontal, 12)
@@ -122,7 +128,7 @@ private struct QuickSearchRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(isSelected ? Color.accentColor : Color.clear)
         )
-        .foregroundStyle(isSelected ? Color.white : Color.primary)
+        .foregroundStyle(primaryForeground)
     }
 }
 
@@ -132,13 +138,13 @@ private struct CountdownRing: View {
     /// 1 = full period remaining, 0 = expiring now.
     let fraction: Double
     let seconds: Int
-    /// True when drawn on the selected (accent-filled) row, so colors stay legible.
-    let onAccent: Bool
+    /// Base ring color, already chosen to contrast with whatever it's drawn on.
+    let tint: Color
 
     var body: some View {
         ZStack {
             Circle()
-                .stroke((onAccent ? Color.white : Color.secondary).opacity(0.25), lineWidth: 2)
+                .stroke(tint.opacity(0.25), lineWidth: 2)
             Circle()
                 .trim(from: 0, to: max(0.001, min(fraction, 1)))
                 .stroke(ringColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
@@ -152,7 +158,23 @@ private struct CountdownRing: View {
     private var ringColor: Color {
         if seconds <= 5 { return .red }
         if seconds <= 10 { return .orange }
-        return onAccent ? .white : .accentColor
+        return tint
+    }
+}
+
+private extension Color {
+    /// Black or white — whichever has the higher WCAG contrast ratio against this color
+    /// used as a fill. (A luminance threshold alone gets mid-tone accents wrong; comparing
+    /// the actual ratios picks correctly, e.g. black on a lime/green accent.)
+    var contrastingForeground: Color {
+        let resolved = NSColor(self).usingColorSpace(.sRGB)
+            ?? NSColor.controlAccentColor.usingColorSpace(.sRGB)
+        guard let c = resolved else { return .white }
+        func lin(_ v: CGFloat) -> CGFloat { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        let luminance = 0.2126 * lin(c.redComponent) + 0.7152 * lin(c.greenComponent) + 0.0722 * lin(c.blueComponent)
+        let contrastWithWhite = 1.05 / (luminance + 0.05)
+        let contrastWithBlack = (luminance + 0.05) / 0.05
+        return contrastWithWhite >= contrastWithBlack ? .white : .black
     }
 }
 
