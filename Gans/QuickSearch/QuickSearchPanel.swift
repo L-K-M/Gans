@@ -25,6 +25,9 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
     /// Asked to present the login window when the user isn't signed in.
     var onNeedsLogin: () -> Void = {}
     var isSignedIn: () -> Bool = { false }
+    /// Whether the app is locked, and how to ask for unlock instead of showing codes.
+    var isLocked: () -> Bool = { false }
+    var onLocked: () -> Void = {}
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -40,6 +43,10 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
     // MARK: Show / hide
 
     func show() {
+        if isLocked() {
+            onLocked()
+            return
+        }
         guard isSignedIn() else {
             onNeedsLogin()
             return

@@ -18,7 +18,8 @@ enum Keychain {
 
         var attributes = query
         attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        // Device-only (never synced/migrated) and readable only while the Mac is unlocked.
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 

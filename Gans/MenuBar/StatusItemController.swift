@@ -21,28 +21,38 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let vault: EnteVault
     private let preferences: Preferences
+    private let appLock: AppLock
 
     var onQuickSearch: () -> Void = {}
     var onSettings: () -> Void = {}
     var onLogin: () -> Void = {}
     var onCheckForUpdates: () -> Void = {}
+    var onUnlock: () -> Void = {}
 
     private var cancellables = Set<AnyCancellable>()
 
-    init(vault: EnteVault, preferences: Preferences) {
+    init(vault: EnteVault, preferences: Preferences, appLock: AppLock) {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.vault = vault
         self.preferences = preferences
+        self.appLock = appLock
         super.init()
 
         configureButton()
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
+
+        // Reflect the lock state in the menu-bar glyph.
+        appLock.$isLocked
+            .receive(on: RunLoop.main)
+            .sink { [weak self] locked in self?.configureButton(locked: locked) }
+            .store(in: &cancellables)
     }
 
-    private func configureButton() {
-        let image = NSImage(systemSymbolName: "key.fill", accessibilityDescription: "Gans")
+    private func configureButton(locked: Bool = false) {
+        let symbol = locked ? "lock.fill" : "key.fill"
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Gans")
         image?.isTemplate = true
         statusItem.button?.image = image
     }
@@ -51,11 +61,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        if vault.isSignedIn {
+        if appLock.isLocked {
+            buildLockedMenu(menu)
+        } else if vault.isSignedIn {
             buildSignedInMenu(menu)
         } else {
             buildSignedOutMenu(menu)
         }
+    }
+
+    private func buildLockedMenu(_ menu: NSMenu) {
+        let item = NSMenuItem(title: "Gans is locked", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        menu.addItem(item)
+        menu.addItem(ActionMenuItem(title: "Unlock Gans…") { [weak self] in self?.onUnlock() })
+        menu.addItem(.separator())
+        addCommonFooter(menu)
     }
 
     private func buildSignedOutMenu(_ menu: NSMenu) {
@@ -101,6 +122,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(ActionMenuItem(title: "Refresh Now") { [weak self] in
             Task { await self?.vault.refresh() }
         })
+        if appLock.isEnabled {
+            menu.addItem(ActionMenuItem(title: "Lock Now") { [weak self] in self?.appLock.lockIfEnabled() })
+        }
         menu.addItem(.separator())
         addCommonFooter(menu)
         menu.addItem(ActionMenuItem(title: "Sign Out") { [weak self] in self?.vault.signOut() })

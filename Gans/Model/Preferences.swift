@@ -25,6 +25,7 @@ final class Preferences: ObservableObject {
         static let clearClipboardEnabled = "clearClipboardEnabled"
         static let clearClipboardSeconds = "clearClipboardSeconds"
         static let recentlyUsedIDs = "recentlyUsedIDs"
+        static let requireUnlock = "requireUnlock"
     }
 
     /// How many recently-used entry ids to remember (for Quick Search ordering).
@@ -54,6 +55,11 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(clearClipboardSeconds, forKey: Key.clearClipboardSeconds) }
     }
 
+    /// Require Touch ID / device password to unlock Gans on launch (and via Lock Now).
+    @Published var requireUnlock: Bool {
+        didSet { defaults.set(requireUnlock, forKey: Key.requireUnlock) }
+    }
+
     /// Most-recently-used entry ids, most recent first. Drives Quick Search ordering.
     @Published private(set) var recentlyUsedIDs: [String]
 
@@ -70,6 +76,7 @@ final class Preferences: ObservableObject {
         self.alsoCopyWhenTyping = defaults.object(forKey: Key.alsoCopyWhenTyping) as? Bool ?? true
         self.clearClipboardEnabled = defaults.object(forKey: Key.clearClipboardEnabled) as? Bool ?? true
         self.clearClipboardSeconds = (defaults.object(forKey: Key.clearClipboardSeconds) as? Int) ?? 30
+        self.requireUnlock = defaults.object(forKey: Key.requireUnlock) as? Bool ?? false
         self.recentlyUsedIDs = defaults.stringArray(forKey: Key.recentlyUsedIDs) ?? []
     }
 

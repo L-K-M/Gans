@@ -9,11 +9,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preferences = Preferences.shared
     private let vault = EnteVault()
     private let loginAPI = EnteAPI()
+    private lazy var appLock = AppLock(preferences: preferences)
 
     private lazy var updateChecker = UpdateChecker(
         configuration: .init(owner: "L-K-M", repo: "Gans", appName: "Gans")
     )
-    private lazy var statusItemController = StatusItemController(vault: vault, preferences: preferences)
+    private lazy var statusItemController = StatusItemController(vault: vault, preferences: preferences, appLock: appLock)
     private lazy var quickSearch = QuickSearchController(preferences: preferences)
     private lazy var loginWindow = LoginWindowController(vault: vault, api: loginAPI)
     private lazy var settingsWindow = SettingsWindowController(preferences: preferences, vault: vault, updateChecker: updateChecker)
@@ -41,11 +42,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateChecker.start()
         observeVault()
 
-        // Restore the session; if there's nobody signed in, open the sign-in window so a
-        // fresh launch is actionable rather than a silent menu-bar icon.
-        Task {
-            await vault.restore()
-            if !vault.isSignedIn { loginWindow.show() }
+        startSession()
+    }
+
+    /// At launch: if the app lock is on and a session exists, start locked and prompt for
+    /// unlock before touching the token; otherwise restore the session (and open sign-in if
+    /// nobody's signed in).
+    private func startSession() {
+        if appLock.isEnabled && vault.isSignedIn {
+            appLock.lockIfEnabled()
+            promptUnlock()
+        } else {
+            Task {
+                await vault.restore()
+                if !vault.isSignedIn { loginWindow.show() }
+            }
+        }
+    }
+
+    /// Asks for Touch ID / password; on success, restores the (until-now untouched) session.
+    private func promptUnlock() {
+        appLock.authenticate { [weak self] success in
+            guard let self, success else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            Task { await self.vault.restore() }
         }
     }
 
@@ -63,12 +83,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItemController.onSettings = { [weak self] in self?.settingsWindow.show() }
         statusItemController.onLogin = { [weak self] in self?.loginWindow.show() }
         statusItemController.onCheckForUpdates = { [weak self] in self?.updateChecker.checkNow() }
+        statusItemController.onUnlock = { [weak self] in self?.promptUnlock() }
     }
 
     private func wireQuickSearch() {
         quickSearch.entriesProvider = { [weak self] in self?.vault.entries ?? [] }
         quickSearch.isSignedIn = { [weak self] in self?.vault.isSignedIn ?? false }
         quickSearch.onNeedsLogin = { [weak self] in self?.loginWindow.show() }
+        quickSearch.isLocked = { [weak self] in self?.appLock.isLocked ?? false }
+        quickSearch.onLocked = { [weak self] in self?.promptUnlock() }
     }
 
     private func wireSettings() {

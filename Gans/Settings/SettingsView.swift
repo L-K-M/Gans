@@ -20,6 +20,7 @@ struct SettingsView: View {
         Form {
             accountSection
             quickSearchSection
+            securitySection
             permissionsSection
             startupSection
             updatesSection
@@ -78,6 +79,15 @@ struct SettingsView: View {
                     Text("2 minutes").tag(120)
                 }
             }
+        }
+    }
+
+    private var securitySection: some View {
+        Section("Security") {
+            Toggle("Require Touch ID or password to unlock", isOn: $preferences.requireUnlock)
+            Text("When on, Gans locks on launch (and via “Lock Now”) and asks for Touch ID or your Mac password before showing or typing any codes. The Ente token and key stay in the device-only Keychain.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
