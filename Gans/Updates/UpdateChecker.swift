@@ -22,10 +22,6 @@ final class UpdateChecker: ObservableObject {
         var appName: String
         var currentVersion: String
         var allowPrereleases: Bool
-        /// When true (default), the alert's **Download** action saves the release's
-        /// disk image/zip to `~/Downloads` and reveals it in Finder; when false it just
-        /// opens the release page in the browser.
-        var autoDownloadAssets: Bool
         var minimumCheckInterval: TimeInterval
         /// Namespacing prefix for this checker's `UserDefaults` keys.
         var defaultsKeyPrefix: String
@@ -35,7 +31,6 @@ final class UpdateChecker: ObservableObject {
              appName: String = Bundle.main.appDisplayName,
              currentVersion: String = Bundle.main.shortVersionString,
              allowPrereleases: Bool = false,
-             autoDownloadAssets: Bool = true,
              minimumCheckInterval: TimeInterval = 24 * 60 * 60,
              defaultsKeyPrefix: String? = nil) {
             self.owner = owner
@@ -43,7 +38,6 @@ final class UpdateChecker: ObservableObject {
             self.appName = appName
             self.currentVersion = currentVersion
             self.allowPrereleases = allowPrereleases
-            self.autoDownloadAssets = autoDownloadAssets
             self.minimumCheckInterval = minimumCheckInterval
             self.defaultsKeyPrefix = defaultsKeyPrefix ?? "UpdateChecker.\(owner).\(repo)"
         }
@@ -51,7 +45,6 @@ final class UpdateChecker: ObservableObject {
 
     let configuration: Configuration
     private let client: GitHubReleaseClient
-    private let downloader = UpdateDownloader()
     private let defaults: UserDefaults
     private var timer: Timer?
 
@@ -68,9 +61,6 @@ final class UpdateChecker: ObservableObject {
 
     /// True while a check is in flight (to disable a "Check Now" button, say).
     @Published private(set) var isChecking = false
-
-    /// True while an update asset is downloading to `~/Downloads`.
-    @Published private(set) var isDownloading = false
 
     init(configuration: Configuration, defaults: UserDefaults = .standard) {
         self.configuration = configuration
@@ -166,39 +156,13 @@ final class UpdateChecker: ObservableObject {
 
         switch runModal(alert) {
         case .alertFirstButtonReturn:
-            if configuration.autoDownloadAssets {
-                downloadAndReveal(release)
-            } else {
-                NSWorkspace.shared.open(release.htmlURL)
-            }
+            // Open the release page in the browser so the user reviews and downloads the
+            // update themselves. Gans never downloads, stores, or launches the binary.
+            NSWorkspace.shared.open(release.htmlURL)
         case .alertThirdButtonReturn:
             skippedVersion = release.tagName
         default:
             break   // Remind Me Later — re-offered on the next check.
-        }
-    }
-
-    /// Downloads the release's preferred asset to `~/Downloads` and reveals it in
-    /// Finder. Falls back to opening the release page if there's no downloadable asset
-    /// or the download fails.
-    @MainActor
-    private func downloadAndReveal(_ release: GitHubRelease) {
-        guard let asset = release.preferredAsset else {
-            NSWorkspace.shared.open(release.htmlURL)
-            return
-        }
-        guard !isDownloading else { return }
-        isDownloading = true
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.isDownloading = false }
-            do {
-                let fileURL = try await self.downloader.downloadToDownloads(asset)
-                NSWorkspace.shared.activateFileViewerSelecting([fileURL])
-            } catch {
-                NSLog("UpdateChecker: download failed (\(error.localizedDescription)); opening release page")
-                NSWorkspace.shared.open(release.htmlURL)
-            }
         }
     }
 

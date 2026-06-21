@@ -109,6 +109,9 @@ final class LoginViewModel: ObservableObject {
         switch step {
         case .authorized(let authorization):
             try await vault.completeLogin(authorization: authorization, password: password, email: trimmedEmail)
+            // The password has unwrapped the key hierarchy and is no longer needed; drop
+            // our reference so it doesn't linger in memory for the app's lifetime.
+            password = ""
             onSignedIn()
         case .needsEmailCode:
             code = ""

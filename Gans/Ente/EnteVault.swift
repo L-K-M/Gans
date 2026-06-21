@@ -69,7 +69,8 @@ final class EnteVault: ObservableObject {
     /// authenticator key, persist the session, and do a first sync.
     func completeLogin(authorization: AuthorizationResponse, password: String, email: String) async throws {
         state = .loading
-        let keys = try KeyUnwrap.unwrap(authorization: authorization, password: password)
+        var keys = try KeyUnwrap.unwrap(authorization: authorization, password: password)
+        defer { keys.wipe() } // master/secret keys are only needed to unwrap the authKey below
         await api.setAuthToken(keys.token)
 
         let wrappedAuthKey = try await api.get(AuthenticatorKey.self, path: "authenticator/key", authenticated: true)

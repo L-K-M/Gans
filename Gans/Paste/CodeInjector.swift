@@ -62,8 +62,14 @@ enum CodeInjector {
     /// never clobber something the user copied afterwards).
     static func copyToClipboard(_ string: String, clearAfter: TimeInterval? = nil) {
         let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
+        // Mark the code as concealed + transient so clipboard-history managers and Universal
+        // Clipboard don't persist or sync the one-time code (https://nspasteboard.org).
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+        pasteboard.declareTypes([.string, concealed, transient], owner: nil)
         pasteboard.setString(string, forType: .string)
+        pasteboard.setString("", forType: concealed)
+        pasteboard.setString("", forType: transient)
 
         guard let delay = clearAfter, delay > 0 else { return }
         let changeCountAtCopy = pasteboard.changeCount

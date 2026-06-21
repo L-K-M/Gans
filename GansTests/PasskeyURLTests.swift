@@ -26,4 +26,34 @@ final class PasskeyURLTests: XCTestCase {
         let host = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.host }
         XCTAssertEqual(host, "accounts.ente.io")
     }
+
+    func testRejectsNonEnteAccountsHost() {
+        let url = EnteLogin.passkeyVerificationURL(accountsURL: "https://evil.example.com",
+                                                   passkeySessionID: "s",
+                                                   clientPackage: "io.ente.auth")
+        let host = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.host }
+        XCTAssertEqual(host, "accounts.ente.io", "a non-Ente host must not be opened in the browser")
+    }
+
+    func testRejectsLookalikeEnteHost() {
+        // "ente.io.evil.com" and "evilente.io" must not be treated as Ente hosts.
+        XCTAssertEqual(EnteLogin.sanitizedAccountsBase("https://accounts.ente.io.evil.com"),
+                       EnteLogin.defaultAccountsURL)
+        XCTAssertEqual(EnteLogin.sanitizedAccountsBase("https://evilente.io"),
+                       EnteLogin.defaultAccountsURL)
+    }
+
+    func testRejectsNonHTTPSAccountsURL() {
+        let comps = EnteLogin.passkeyVerificationURL(accountsURL: "http://accounts.ente.io",
+                                                     passkeySessionID: "s",
+                                                     clientPackage: "io.ente.auth")
+            .flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+        XCTAssertEqual(comps?.scheme, "https")
+        XCTAssertEqual(comps?.host, "accounts.ente.io")
+    }
+
+    func testKeepsLegitimateEnteSubdomain() {
+        XCTAssertEqual(EnteLogin.sanitizedAccountsBase("https://accounts.ente.io"),
+                       "https://accounts.ente.io")
+    }
 }

@@ -32,6 +32,17 @@ enum EnteCrypto {
         sodium_init() >= 0
     }
 
+    /// Best-effort scrub of sensitive bytes once they're no longer needed. Uses libsodium's
+    /// `sodium_memzero`, which (unlike a plain loop) the optimizer won't elide. Effective
+    /// only for the uniquely-referenced buffer passed in — Swift value semantics mean any
+    /// earlier copies are out of reach.
+    static func wipe(_ bytes: inout [UInt8]) {
+        guard !bytes.isEmpty else { return }
+        bytes.withUnsafeMutableBufferPointer { buffer in
+            sodium_memzero(buffer.baseAddress!, buffer.count)
+        }
+    }
+
     // MARK: Argon2id (KEK derivation)
 
     /// `crypto_pwhash` with Argon2id v1.3. `memLimit` is in **bytes** (libsodium's unit —
@@ -44,7 +55,8 @@ enum EnteCrypto {
         guard salt.count == Int(crypto_pwhash_saltbytes()) else {
             throw CryptoError.badLength("Argon2 salt (need \(crypto_pwhash_saltbytes()) bytes)")
         }
-        let passwordBytes = Array(password.utf8)
+        var passwordBytes = Array(password.utf8)
+        defer { wipe(&passwordBytes) }
         var out = [UInt8](repeating: 0, count: outputLength)
 
         let rc = passwordBytes.withUnsafeBytes { pwRaw in
@@ -74,6 +86,7 @@ enum EnteCrypto {
         }
         let context = Array("loginctx".utf8) // 8 bytes == crypto_kdf_CONTEXTBYTES
         var subKey = [UInt8](repeating: 0, count: 32)
+        defer { wipe(&subKey) } // the returned 16-byte prefix is a separate copy
 
         let rc = context.withUnsafeBufferPointer { ctx in
             kek.withUnsafeBufferPointer { keyPtr in

@@ -74,6 +74,15 @@ actor EnteLogin {
                                                        sessionID: createResponse.sessionID,
                                                        srpM1: m1),
                                       authenticated: false)
+
+        // Verify the server's proof (M2) when present, completing SRP mutual auth. A
+        // mismatch is logged rather than fatal: the key unwrap that follows is the
+        // authoritative check (a server that didn't know the verifier can't produce a token
+        // we can decrypt), and the exact M2 byte formula can't be validated against the live
+        // server from CI — so we don't risk blocking a legitimate login on it.
+        if let m2 = auth.srpM2, !m2.isEmpty, !handshake.verifyServerProof(m2Base64: m2, m1Base64: m1) {
+            Log.ente.error("SRP server proof (M2) did not verify; relying on key-unwrap to reject an impostor server.")
+        }
         return step(for: auth)
     }
 
@@ -127,8 +136,7 @@ actor EnteLogin {
     /// polling `get-token` rather than via the browser redirect.
     static func passkeyVerificationURL(accountsURL: String, passkeySessionID: String,
                                        clientPackage: String) -> URL? {
-        let base = accountsURL.isEmpty ? "https://accounts.ente.io" : accountsURL
-        guard var components = URLComponents(string: base) else { return nil }
+        guard var components = URLComponents(string: sanitizedAccountsBase(accountsURL)) else { return nil }
         components.path = "/passkeys/verify"
         components.queryItems = [
             URLQueryItem(name: "passkeySessionID", value: passkeySessionID),
@@ -136,6 +144,22 @@ actor EnteLogin {
             URLQueryItem(name: "clientPackage", value: clientPackage),
         ]
         return components.url
+    }
+
+    /// The canonical Ente accounts host, used when the server-supplied value can't be trusted.
+    static let defaultAccountsURL = "https://accounts.ente.io"
+
+    /// `accountsUrl` comes from the login response, so a hostile/MITM server could try to
+    /// point the browser at an attacker-controlled page. Only honor it when it's an HTTPS
+    /// Ente host; otherwise fall back to the canonical accounts host.
+    static func sanitizedAccountsBase(_ raw: String) -> String {
+        guard let components = URLComponents(string: raw),
+              components.scheme?.lowercased() == "https",
+              let host = components.host?.lowercased(),
+              host == "ente.io" || host.hasSuffix(".ente.io") else {
+            return defaultAccountsURL
+        }
+        return raw
     }
 
     /// Polls `get-token` until the browser passkey ceremony completes and the server has an

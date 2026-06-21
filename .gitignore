@@ -40,14 +40,14 @@ xcuserdata/
 ## Xcode project — keep shared schemes, ignore user schemes
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
-*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 *.xcworkspace/xcuserdata/
 
 # Swift Package Manager
 .build/
 .swiftpm/
 Packages/
-Package.resolved
+# Package.resolved is intentionally committed (not ignored) so release builds pin a
+# reviewed set of dependency versions/revisions — supply-chain hardening.
 
 # CocoaPods (not used, but ignore if added later)
 Pods/
