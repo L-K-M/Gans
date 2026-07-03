@@ -38,8 +38,29 @@ struct HotkeyRecorderView: NSViewRepresentable {
             return super.resignFirstResponder()
         }
 
+        /// Menu key equivalents are dispatched *before* `keyDown`, so without this hook
+        /// recording ⌘Q would quit the app and ⌘C would trigger Copy instead of being
+        /// captured. While recording, every chord belongs to the recorder.
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            guard recording, event.type == .keyDown else {
+                return super.performKeyEquivalent(with: event)
+            }
+            capture(event)
+            return true
+        }
+
         override func keyDown(with event: NSEvent) {
             guard recording else { super.keyDown(with: event); return }
+            capture(event)
+        }
+
+        private func capture(_ event: NSEvent) {
+            // Esc cancels recording (it can't be a sensible bare hotkey anyway).
+            if Int(event.keyCode) == kVK_Escape {
+                recording = false
+                window?.makeFirstResponder(nil)
+                return
+            }
             let modifiers = KeyCodes.carbonModifiers(from: event.modifierFlags)
             // Require at least one modifier so the hotkey doesn't swallow ordinary typing.
             guard modifiers != 0 else { NSSound.beep(); return }
