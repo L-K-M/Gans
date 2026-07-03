@@ -141,4 +141,12 @@ final class OtpAuthURITests: XCTestCase {
         XCTAssertEqual(entry?.pinned, false)
         XCTAssertEqual(entry?.isTrashed, false)
     }
+
+    func testCodeDisplayTags() {
+        // {"tags":["work","dev"]} percent-encoded.
+        let display = "%7B%22tags%22%3A%5B%22work%22%2C%22dev%22%5D%7D"
+        let uri = "otpauth://totp/Iss:acct?secret=JBSWY3DPEHPK3PXP&codeDisplay=\(display)"
+        let entry = AuthEntry.parse(uri: uri, id: "30")
+        XCTAssertEqual(entry?.tags, ["work", "dev"])
+    }
 }

@@ -77,7 +77,7 @@ struct QuickSearchView: View {
                     ForEach(Array(model.results.enumerated()), id: \.element.id) { index, entry in
                         QuickSearchRow(entry: entry, tick: model.tick,
                                        isSelected: entry.id == model.selectedID,
-                                       showCode: model.showCodes,
+                                       reveal: model.codesVisible,
                                        shortcutHint: model.showIndices && index < 9 ? "⌘\(index + 1)" : nil)
                             .id(entry.id)
                             .contentShape(Rectangle())
@@ -113,7 +113,13 @@ struct QuickSearchView: View {
     /// A quiet key-hint bar, so ⌥↩ and ⌘1–9 are discoverable without documentation.
     private var footer: some View {
         HStack(spacing: 14) {
-            keyHint("↩", "Insert")
+            // When the query has narrowed to a single hit, name the app the code will be
+            // typed into — reinforcing the core trick ("↩ to fill into Safari").
+            if model.results.count == 1, let app = model.targetAppName, !app.isEmpty {
+                keyHint("↩", "Fill into \(app)")
+            } else {
+                keyHint("↩", "Insert")
+            }
             keyHint("⌥↩", "Copy")
             keyHint("⌘1–9", "Quick pick")
             Spacer()
@@ -142,8 +148,8 @@ private struct QuickSearchRow: View {
     let entry: AuthEntry
     let tick: Date
     let isSelected: Bool
-    /// When false, the code is masked (Quick Search just types it on commit).
-    let showCode: Bool
+    /// When false, the code is masked (Quick Search just types it on commit or ⌥-peek).
+    let reveal: Bool
     /// "⌘3" while the command key is held; nil otherwise.
     let shortcutHint: String?
 
@@ -160,18 +166,38 @@ private struct QuickSearchRow: View {
         isSelected ? Color.accentColor.contrastingForeground : .primary
     }
 
+    /// Tooltip: the full name, plus the Ente note when there is one.
+    private var helpText: String {
+        entry.note.isEmpty ? entry.displayName : "\(entry.displayName) — \(entry.note)"
+    }
+
+    /// The leading avatar: the ⌘N quick-pick badge while ⌘ is held, otherwise a
+    /// deterministic issuer color-chip for fast scanning.
+    @ViewBuilder private var leadingBadge: some View {
+        if let shortcutHint {
+            Text(shortcutHint)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(isSelected ? primaryForeground.opacity(0.85) : Color.secondary)
+                .frame(width: 26, height: 26)
+        } else {
+            IssuerChip(name: entry.issuer.isEmpty ? entry.displayName : entry.issuer)
+        }
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            if let shortcutHint {
-                Text(shortcutHint)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(isSelected ? primaryForeground.opacity(0.8) : Color.secondary)
-                    .frame(width: 30, alignment: .leading)
-            }
+            leadingBadge
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.issuer.isEmpty ? entry.displayName : entry.issuer)
-                    .font(.system(size: 15, weight: .medium))
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(entry.issuer.isEmpty ? entry.displayName : entry.issuer)
+                        .font(.system(size: 15, weight: .medium))
+                        .lineLimit(1)
+                    if entry.pinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(isSelected ? primaryForeground.opacity(0.7) : Color.secondary)
+                    }
+                }
                 if !entry.account.isEmpty && !entry.issuer.isEmpty {
                     Text(entry.account)
                         .font(.system(size: 12))
@@ -180,7 +206,7 @@ private struct QuickSearchRow: View {
                 }
             }
             Spacer()
-            Text(showCode ? entry.formattedCode(at: tick) : maskedCode)
+            Text(reveal ? entry.formattedCode(at: tick) : maskedCode)
                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(primaryForeground)
@@ -199,7 +225,7 @@ private struct QuickSearchRow: View {
         )
         .foregroundStyle(primaryForeground)
         .onHover { isHovered = $0 }
-        .help(entry.displayName)
+        .help(helpText)
         .accessibilityElement(children: .combine)
     }
 
