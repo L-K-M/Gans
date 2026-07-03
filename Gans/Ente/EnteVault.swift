@@ -93,9 +93,28 @@ final class EnteVault: ObservableObject {
 
     // MARK: Sync
 
+    /// True when the persisted token was rejected (HTTP 401) — the user must sign in
+    /// again before anything will sync. Cached entries keep working offline meanwhile.
+    @Published private(set) var sessionExpired = false
+
+    /// The in-flight refresh, so concurrent callers (menu + launch + timer) coalesce
+    /// into one network pass instead of racing the cache.
+    private var refreshTask: Task<Void, Never>?
+
     /// Fetches new/changed entities since the cached cursor, updates the cache, and
     /// republishes the decrypted entries.
     func refresh() async {
+        if let refreshTask {
+            await refreshTask.value
+            return
+        }
+        let task = Task { await performRefresh() }
+        refreshTask = task
+        await task.value
+        refreshTask = nil
+    }
+
+    private func performRefresh() async {
         guard authKey != nil else { return }
         if entries.isEmpty { state = .loading }
         do {
@@ -130,9 +149,15 @@ final class EnteVault: ObservableObject {
             entries = decrypt(entities: snapshot.entities)
             lastSync = Date()
             state = .ready
+            sessionExpired = false
         } catch {
-            // Keep showing cached entries on a transient failure; surface auth failures.
-            if entries.isEmpty {
+            // A 401 means the token is dead: quietly showing (aging) cached codes forever
+            // would hide that nothing syncs anymore — flag it so the UI can offer to
+            // re-authenticate. Other failures are transient; keep the cached entries.
+            if case EnteAPI.APIError.http(let status, _) = error, status == 401 {
+                sessionExpired = true
+                state = .error("Session expired — please sign in again.")
+            } else if entries.isEmpty {
                 state = .error((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             }
             Log.ente.error("Refresh failed: \(error.localizedDescription, privacy: .public)")
@@ -150,6 +175,7 @@ final class EnteVault: ObservableObject {
         accountEmail = nil
         entries = []
         state = .signedOut
+        sessionExpired = false
         Task { await api.setAuthToken(nil) }
     }
 
