@@ -212,11 +212,12 @@ entries it's a visible hitch each refresh. Reasonable fix when it matters: decry
 the main actor and/or only when the diff actually changed something.
 **Confidence: medium (needs profiling on-device) · Plan: documented only**
 
-### F-P3 🟡 Every visible row recomputes its HMAC every second — even masked
-`QuickSearchView.swift:115` — the 1 Hz `tick` invalidates all rows; each computes
-`entry.formattedCode(at:)` even when `showCode == false` renders dots. HMACs are
-microseconds so this is energy, not stutter — but it's free to skip.
-**Plan: branch B (compute code only when shown)**
+### F-P3 🟡 (withdrawn on closer read — mostly fine)
+I initially flagged that masked rows recompute HMACs every second; that's wrong — the
+ternary in `QuickSearchRow` only evaluates the branch it renders, so masked rows never
+touch the generator. What remains is trivial: the 1 Hz tick re-renders even HOTP rows
+(which have nothing time-based to show). The user-visible cost is the ring stutter,
+which is F-Q7. **Plan: folded into branch B (F-Q7 only)**
 
 ### F-P4 🟡 Timers use `.common` mode at 1 Hz while the panel is open — fine — but the update timer never stops
 `UpdateChecker.start()` schedules a daily repeating timer with 10% tolerance; fine.
