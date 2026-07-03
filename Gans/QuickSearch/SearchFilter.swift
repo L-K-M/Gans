@@ -12,16 +12,19 @@ enum SearchFilter {
 
     /// Returns the entries matching `query`, best matches first.
     ///
-    /// `recentIDs` is the most-recently-used entry ids (most recent first); it biases
-    /// ordering so codes you actually use float up. An empty query returns everything,
-    /// recently-used first and then alphabetically. For a non-empty query, entries are
-    /// ranked prefix → substring → subsequence (fuzzy), with recency and then name
-    /// breaking ties *within* a rank — so a real prefix hit always beats a fuzzy one.
+    /// The query is split on whitespace and every token must match (AND), so
+    /// "github alice" and "alice github" both find the GitHub/alice entry. A single
+    /// token ranks prefix → substring → subsequence (fuzzy); a multi-token query ranks
+    /// by its *worst* token so a real prefix hit always beats a fuzzy one.
+    ///
+    /// Ordering within a rank: pinned entries first, then recently used (`recentIDs`,
+    /// most recent first), then name. An empty query returns everything in that order.
     static func filter(_ entries: [AuthEntry], query: String, recentIDs: [String] = []) -> [AuthEntry] {
         let recencyRank: (AuthEntry) -> Int = { entry in
             recentIDs.firstIndex(of: entry.id) ?? Int.max
         }
-        let byRecencyThenName: (AuthEntry, AuthEntry) -> Bool = { lhs, rhs in
+        let byPinnedRecencyName: (AuthEntry, AuthEntry) -> Bool = { lhs, rhs in
+            if lhs.pinned != rhs.pinned { return lhs.pinned }
             let lr = recencyRank(lhs), rr = recencyRank(rhs)
             if lr != rr { return lr < rr }
             return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
@@ -29,28 +32,39 @@ enum SearchFilter {
 
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return entries.sorted(by: byRecencyThenName)
+            return entries.sorted(by: byPinnedRecencyName)
         }
 
-        let needle = fold(trimmed)
+        let tokens = fold(trimmed).split(whereSeparator: { $0.isWhitespace }).map(String.init)
         let scored: [(entry: AuthEntry, rank: Int)] = entries.compactMap { entry in
             let issuer = fold(entry.issuer)
             let account = fold(entry.account)
             let display = fold(entry.displayName)
 
-            if issuer.hasPrefix(needle) || display.hasPrefix(needle) { return (entry, 0) }
-            if account.hasPrefix(needle) { return (entry, 1) }
-            if issuer.contains(needle) || account.contains(needle) || display.contains(needle) { return (entry, 2) }
-            // Loose fuzzy: every needle character appears in order somewhere in the name
-            // ("ghb" → "GitHub"). Ranked last so it never outranks a literal match.
-            if isSubsequence(needle, of: display) || isSubsequence(needle, of: account) { return (entry, 3) }
-            return nil
+            var worst = 0
+            for token in tokens {
+                guard let rank = tokenRank(token, issuer: issuer, account: account, display: display) else {
+                    return nil // every token must match somewhere
+                }
+                worst = max(worst, rank)
+            }
+            return (entry, worst)
         }
 
         return scored.sorted { lhs, rhs in
             if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
-            return byRecencyThenName(lhs.entry, rhs.entry)
+            return byPinnedRecencyName(lhs.entry, rhs.entry)
         }.map(\.entry)
+    }
+
+    /// How well one (already-folded) token matches: 0 issuer/display prefix, 1 account
+    /// prefix, 2 substring anywhere, 3 in-order subsequence ("ghb" → "GitHub"), nil none.
+    private static func tokenRank(_ needle: String, issuer: String, account: String, display: String) -> Int? {
+        if issuer.hasPrefix(needle) || display.hasPrefix(needle) { return 0 }
+        if account.hasPrefix(needle) { return 1 }
+        if issuer.contains(needle) || account.contains(needle) || display.contains(needle) { return 2 }
+        if isSubsequence(needle, of: display) || isSubsequence(needle, of: account) { return 3 }
+        return nil
     }
 
     /// Whether every character of `needle` appears in `haystack` in order (not necessarily

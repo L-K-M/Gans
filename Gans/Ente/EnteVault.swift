@@ -167,7 +167,9 @@ final class EnteVault: ObservableObject {
             do {
                 let plaintext = try EnteCrypto.secretStreamOpenSingleChunk(cipherText: cipher, header: header, key: authKey)
                 let uri = Self.unwrapURI(from: plaintext)
-                if let entry = AuthEntry.parse(uri: uri, id: entity.id) {
+                // Entries in Ente's trash stay in the diff with codeDisplay.trashed set;
+                // they must not appear (or type codes) here.
+                if let entry = AuthEntry.parse(uri: uri, id: entity.id), !entry.isTrashed {
                     result.append(entry)
                 }
             } catch {
