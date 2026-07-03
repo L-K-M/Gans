@@ -50,6 +50,41 @@ final class PreferencesTests: XCTestCase {
         XCTAssertNil(prefs.clipboardClearDelay)
     }
 
+    func testFrecencyCountsPersistAndRank() {
+        let defaults = makeDefaults()
+        do {
+            let prefs = Preferences(defaults: defaults)
+            prefs.recordUsage("a")
+            prefs.recordUsage("c")
+            prefs.recordUsage("c")
+            prefs.recordUsage("a")
+            prefs.recordUsage("a")
+            prefs.recordUsage("b")
+            XCTAssertEqual(prefs.usageCounts["a"], 3)
+            XCTAssertEqual(prefs.usageCounts["c"], 2)
+            XCTAssertEqual(prefs.usageCounts["b"], 1)
+            XCTAssertEqual(prefs.mostUsed(limit: 2).map { $0.id }, ["a", "c"])
+            // Everything was used just now, so frequency dominates the frecency rank.
+            XCTAssertEqual(prefs.frecencyRankedIDs, ["a", "c", "b"])
+        }
+        // Counts survive a reload from the same defaults.
+        XCTAssertEqual(Preferences(defaults: defaults).usageCounts["a"], 3)
+    }
+
+    func testHonkAndOnboardingDefaultToOffAndPersist() {
+        let defaults = makeDefaults()
+        XCTAssertFalse(Preferences(defaults: defaults).honkOnCopy)
+        XCTAssertFalse(Preferences(defaults: defaults).hasCompletedOnboarding)
+        do {
+            let prefs = Preferences(defaults: defaults)
+            prefs.honkOnCopy = true
+            prefs.hasCompletedOnboarding = true
+        }
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.honkOnCopy)
+        XCTAssertTrue(reloaded.hasCompletedOnboarding)
+    }
+
     func testDeliveryModePersists() {
         let defaults = makeDefaults()
         do {

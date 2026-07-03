@@ -18,6 +18,16 @@ enum CodeInjector {
         return AXIsProcessTrustedWithOptions([key: prompt] as CFDictionary)
     }
 
+    /// Shows the system Accessibility prompt and opens System Settings → Privacy &
+    /// Security → Accessibility, so the user can grant the permission that lets Gans type
+    /// codes into other apps.
+    static func openAccessibilitySettings() {
+        _ = hasAccessibilityPermission(prompt: true)
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     enum Result {
         case delivered
         case copiedOnly // no Accessibility permission; code is on the clipboard

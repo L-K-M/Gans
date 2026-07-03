@@ -36,6 +36,9 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
     /// Whether the app is locked, and how to ask for unlock instead of showing codes.
     var isLocked: () -> Bool = { false }
     var onLocked: () -> Void = {}
+    /// Fired when a code is committed (typed or copied) so the status item can play the
+    /// copy confirmation — the glyph blink and, in honk mode, the honk.
+    var onCommitted: () -> Void = {}
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -74,7 +77,7 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
         model.showCodes = preferences.showCodesInQuickSearch
         model.peek = false
         model.targetAppName = previousApp?.localizedName
-        model.recentIDs = preferences.recentlyUsedIDs
+        model.recentIDs = preferences.frecencyRankedIDs
         model.setEntries(entriesProvider())
         model.reset()
 
@@ -245,6 +248,7 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
     private func commit(_ entry: AuthEntry) {
         let target = previousApp
         preferences.recordUsage(entry.id)
+        onCommitted()
         hide(restoreFocus: false) // the injector re-activates the target itself
 
         // Never type a code that dies mid-submit: if a time-based code has ≤2s left,
@@ -267,9 +271,11 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
                              alsoCopy: preferences.alsoCopyWhenTyping,
                              clearClipboardAfter: preferences.clipboardClearDelay) { result in
             // Without the Accessibility permission the code silently lands on the
-            // clipboard instead of being typed — say so, or the commit feels broken.
+            // clipboard instead of being typed — say so, and offer the fix inline.
             if case .copiedOnly = result {
-                ToastPanel.show("Copied to the clipboard — grant Accessibility in Settings to insert codes directly")
+                ToastPanel.show("Copied to the clipboard — grant Accessibility to insert codes directly.",
+                                duration: 6,
+                                actionTitle: "Grant…") { CodeInjector.openAccessibilitySettings() }
             }
         }
     }
@@ -279,6 +285,7 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
     private func copyCommit(_ entry: AuthEntry) {
         let code = entry.code()
         preferences.recordUsage(entry.id)
+        onCommitted()
         hide()
         CodeInjector.copyToClipboard(code, clearAfter: preferences.clipboardClearDelay)
         ToastPanel.show("Code copied")

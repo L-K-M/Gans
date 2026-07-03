@@ -165,19 +165,25 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func copy(_ entry: AuthEntry) {
         CodeInjector.copyToClipboard(entry.code(), clearAfter: preferences.clipboardClearDelay)
         preferences.recordUsage(entry.id)
-        flashCopied()
+        confirmCopy()
     }
 
     /// Monotonic token so overlapping flashes can't restore a stale glyph (two quick
     /// copies used to capture the checkmark as "original" and leave it stuck).
     private var flashGeneration = 0
 
-    /// Briefly swaps the menu-bar glyph to a checkmark to confirm a copy.
-    private func flashCopied() {
+    /// Confirms a copy or Quick Search commit: briefly swaps the menu-bar glyph — a 🪿
+    /// goose in honk mode, otherwise a checkmark — and, in honk mode, plays the honk.
+    /// Public so the Quick Search commit path can trigger the same confirmation.
+    func confirmCopy() {
+        let honk = preferences.honkOnCopy
+        if honk { Honk.play() }
         guard let button = statusItem.button else { return }
         flashGeneration += 1
         let generation = flashGeneration
-        button.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Copied")
+        // "bird.fill" stands in for the goose (SF Symbols has no goose, sadly).
+        let symbol = honk ? "bird.fill" : "checkmark.circle.fill"
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Copied")
         button.image?.isTemplate = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
             guard let self, self.flashGeneration == generation else { return }

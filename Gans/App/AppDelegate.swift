@@ -44,6 +44,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startAutoRefresh()
 
         startSession()
+        presentOnboardingIfNeeded()
+    }
+
+    /// First launch only: a gentle, window-less welcome that names the hotkey and offers
+    /// to open Quick Search — then never shown again.
+    private func presentOnboardingIfNeeded() {
+        guard !preferences.hasCompletedOnboarding else { return }
+        preferences.hasCompletedOnboarding = true
+        let hotkey = preferences.hotkey.displayString
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            ToastPanel.show(
+                "Gans lives in your menu bar. Press \(hotkey) anywhere to search your 2FA codes and type them into whatever app you're in.",
+                duration: 12,
+                actionTitle: "Try it") { [weak self] in self?.quickSearch.show() }
+        }
     }
 
     /// At launch: if the app lock is on and a session exists, start locked and prompt for
@@ -100,6 +115,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quickSearch.onNeedsLogin = { [weak self] in self?.loginWindow.show() }
         quickSearch.isLocked = { [weak self] in self?.appLock.isLocked ?? false }
         quickSearch.onLocked = { [weak self] in self?.promptUnlock() }
+        // A Quick Search commit gets the same confirmation as a menu copy (glyph blink,
+        // and the honk in honk mode) — the status item owns the menu-bar glyph.
+        quickSearch.onCommitted = { [weak self] in self?.statusItemController.confirmCopy() }
     }
 
     private func wireSettings() {
