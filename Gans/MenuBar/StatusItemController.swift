@@ -106,6 +106,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(header)
         }
 
+        // A dead token would otherwise fail silently while stale cached codes keep
+        // showing — surface it and offer the fix right here.
+        if vault.sessionExpired {
+            let warning = NSMenuItem(title: "⚠️ Session expired — codes no longer sync", action: nil, keyEquivalent: "")
+            warning.isEnabled = false
+            menu.addItem(warning)
+            menu.addItem(ActionMenuItem(title: "Sign In Again…") { [weak self] in self?.onLogin() })
+            menu.addItem(.separator())
+        }
+
         let entries = vault.entries
         switch vault.state {
         case .loading where entries.isEmpty:
