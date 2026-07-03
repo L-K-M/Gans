@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         updateChecker.start()
         observeVault()
+        startAutoRefresh()
 
         startSession()
     }
@@ -87,7 +88,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func wireQuickSearch() {
-        quickSearch.entriesProvider = { [weak self] in self?.vault.entries ?? [] }
+        quickSearch.entriesProvider = { [weak self] in
+            guard let self else { return [] }
+            // Opening Quick Search is the moment freshness matters: kick off a
+            // (throttled) background sync while the current entries show immediately —
+            // observeVault() live-updates the open panel if anything changed.
+            self.refreshIfStale()
+            return self.vault.entries
+        }
         quickSearch.isSignedIn = { [weak self] in self?.vault.isSignedIn ?? false }
         quickSearch.onNeedsLogin = { [weak self] in self?.loginWindow.show() }
         quickSearch.isLocked = { [weak self] in self?.appLock.isLocked ?? false }
@@ -104,6 +112,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !hotkey.register(preferences.hotkey) {
             Log.hotkey.error("Failed to register global hotkey \(self.preferences.hotkey.displayString, privacy: .public)")
         }
+    }
+
+    // MARK: Auto refresh
+
+    /// New codes added on other devices used to appear only after a manual
+    /// "Refresh Now" (or a relaunch). Sync periodically, on wake from sleep, and when
+    /// Quick Search opens — all funneled through a shared throttle.
+    private var autoRefreshTimer: Timer?
+    private var lastAutoRefresh = Date.distantPast
+    /// Panel-open / wake refreshes are throttled to this; the timer refreshes anyway.
+    private static let autoRefreshThrottle: TimeInterval = 60
+    private static let autoRefreshInterval: TimeInterval = 15 * 60
+
+    private func startAutoRefresh() {
+        let timer = Timer(timeInterval: Self.autoRefreshInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshIfStale(ignoreThrottle: true) }
+        }
+        timer.tolerance = Self.autoRefreshInterval * 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        autoRefreshTimer = timer
+
+        // The 15-minute timer doesn't fire while the Mac sleeps; catch up on wake.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshIfStale() }
+        }
+    }
+
+    private func refreshIfStale(ignoreThrottle: Bool = false) {
+        guard vault.isSignedIn, !appLock.isLocked else { return }
+        guard ignoreThrottle || Date().timeIntervalSince(lastAutoRefresh) > Self.autoRefreshThrottle else { return }
+        lastAutoRefresh = Date()
+        Task { await vault.refresh() }
     }
 
     /// Keep the open Quick Search panel's list fresh when a sync lands.
