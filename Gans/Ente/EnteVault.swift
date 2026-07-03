@@ -65,30 +65,59 @@ final class EnteVault: ObservableObject {
 
     // MARK: Login
 
+    enum VaultError: LocalizedError {
+        /// `/authenticator/key` 404s for accounts that have never used Ente Auth — the
+        /// generic "account may not exist" message would be wrong and confusing.
+        case noAuthenticatorData
+
+        var errorDescription: String? {
+            switch self {
+            case .noAuthenticatorData:
+                return "This Ente account has no authenticator data yet. Add codes in the Ente Auth app, then sign in again."
+            }
+        }
+    }
+
     /// Completes login from an authorized response: unwrap keys, fetch + unwrap the
     /// authenticator key, persist the session, and do a first sync.
     func completeLogin(authorization: AuthorizationResponse, password: String, email: String) async throws {
         state = .loading
-        var keys = try KeyUnwrap.unwrap(authorization: authorization, password: password)
-        defer { keys.wipe() } // master/secret keys are only needed to unwrap the authKey below
-        await api.setAuthToken(keys.token)
+        do {
+            // KeyUnwrap runs Argon2id (memory-hard, seconds of work at Ente's server-set
+            // parameters) — keep it off the main actor or the login UI freezes solid.
+            var keys = try await Task.detached(priority: .userInitiated) {
+                try KeyUnwrap.unwrap(authorization: authorization, password: password)
+            }.value
+            defer { keys.wipe() } // master/secret keys are only needed to unwrap the authKey below
+            await api.setAuthToken(keys.token)
 
-        let wrappedAuthKey = try await api.get(AuthenticatorKey.self, path: "authenticator/key", authenticated: true)
-        guard let encrypted = Base64.decodeStandard(wrappedAuthKey.encryptedKey),
-              let nonce = Base64.decodeStandard(wrappedAuthKey.header) else {
-            throw EnteCrypto.CryptoError.badLength("authenticator key")
+            let wrappedAuthKey: AuthenticatorKey
+            do {
+                wrappedAuthKey = try await api.get(AuthenticatorKey.self, path: "authenticator/key", authenticated: true)
+            } catch EnteAPI.APIError.http(let status, _) where status == 404 {
+                throw VaultError.noAuthenticatorData
+            }
+            guard let encrypted = Base64.decodeStandard(wrappedAuthKey.encryptedKey),
+                  let nonce = Base64.decodeStandard(wrappedAuthKey.header) else {
+                throw EnteCrypto.CryptoError.badLength("authenticator key")
+            }
+            let unwrappedAuthKey = try EnteCrypto.secretBoxOpen(cipherText: encrypted, nonce: nonce, key: keys.masterKey)
+
+            // Persist (token + authKey + email). Password is intentionally never stored.
+            Keychain.setString(keys.token, for: K.token)
+            Keychain.set(Data(unwrappedAuthKey), for: K.authKey)
+            Keychain.setString(email, for: K.email)
+
+            authKey = unwrappedAuthKey
+            accountEmail = email
+            cache.clear()
+            await refresh()
+        } catch {
+            // Don't strand the vault in .loading when login fails partway.
+            state = entries.isEmpty ? .signedOut : .ready
+            await api.setAuthToken(Keychain.string(for: K.token)) // drop the half-adopted token
+            throw error
         }
-        let unwrappedAuthKey = try EnteCrypto.secretBoxOpen(cipherText: encrypted, nonce: nonce, key: keys.masterKey)
-
-        // Persist (token + authKey + email). Password is intentionally never stored.
-        Keychain.setString(keys.token, for: K.token)
-        Keychain.set(Data(unwrappedAuthKey), for: K.authKey)
-        Keychain.setString(email, for: K.email)
-
-        authKey = unwrappedAuthKey
-        accountEmail = email
-        cache.clear()
-        await refresh()
     }
 
     // MARK: Sync

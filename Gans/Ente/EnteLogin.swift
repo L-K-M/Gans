@@ -56,9 +56,11 @@ actor EnteLogin {
         }
 
         // loginKey = first 16 bytes of KDF(Argon2id(password, kekSalt)).
-        let kek = try EnteCrypto.deriveKeyEncryptionKey(password: password, salt: kekSalt,
-                                                         memLimit: attributes.memLimit, opsLimit: attributes.opsLimit)
-        let loginKey = try EnteCrypto.deriveLoginKey(keyEncryptionKey: kek)
+        var kek = try EnteCrypto.deriveKeyEncryptionKey(password: password, salt: kekSalt,
+                                                        memLimit: attributes.memLimit, opsLimit: attributes.opsLimit)
+        var loginKey = try EnteCrypto.deriveLoginKey(keyEncryptionKey: kek)
+        EnteCrypto.wipe(&kek) // only needed to derive the login key
+        defer { EnteCrypto.wipe(&loginKey) } // hashed into x inside begin(); scrub our copy
 
         let handshake = try EnteSRP.begin(identity: attributes.srpUserID, salt: srpSalt, loginKey: loginKey)
         let createResponse = try await api.post(CreateSRPSessionResponse.self,
