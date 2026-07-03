@@ -29,9 +29,6 @@ final class ActionMenuItem: NSMenuItem {
 /// settings, updates, account, and quit.
 @MainActor
 final class StatusItemController: NSObject, NSMenuDelegate {
-    /// How many entry rows the menu shows before deferring to Quick Search.
-    private static let maxMenuEntries = 30
-
     private let statusItem: NSStatusItem
     private let vault: EnteVault
     private let preferences: Preferences
@@ -132,22 +129,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 item.isEnabled = false
                 menu.addItem(item)
             } else {
-                // Show only the name — never the live code — and copy it on click.
-                // A huge vault would make the menu unusable (and slow to build), so cap
-                // it and point at Quick Search for the rest.
-                let visible = entries.prefix(Self.maxMenuEntries)
-                for entry in visible {
+                // Show every entry — name only (never the live code) — and copy it on
+                // click. The list is intentionally not truncated: a subset would leave
+                // the rest unreachable from the menu. AppKit makes an over-long NSMenu
+                // scroll on its own, and Quick Search (⌃⌥Space) is the fast path for
+                // large vaults, so a complete menu costs nothing but stays exhaustive.
+                for entry in entries {
                     menu.addItem(ActionMenuItem(title: entry.displayName) { [weak self] in
                         self?.copy(entry)
                     })
-                }
-                if entries.count > visible.count {
-                    let hotkey = preferences.hotkey.displayString
-                    let more = NSMenuItem(
-                        title: "…and \(entries.count - visible.count) more — use Quick Search (\(hotkey))",
-                        action: nil, keyEquivalent: "")
-                    more.isEnabled = false
-                    menu.addItem(more)
                 }
             }
         }
