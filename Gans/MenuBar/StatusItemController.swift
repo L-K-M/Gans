@@ -2,15 +2,26 @@ import AppKit
 import Combine
 
 /// An `NSMenuItem` that runs a closure when chosen — keeps menu construction declarative.
+///
+/// The action goes through a separate trampoline object rather than `target = self`:
+/// AppKit retains a menu item's target on modern macOS, so a self-targeting item is a
+/// retain cycle that leaks every item of every menu open. Item → trampoline is a plain
+/// one-way ownership and deallocates with the item under either retain semantic.
 final class ActionMenuItem: NSMenuItem {
-    private let handler: () -> Void
+    private final class Trampoline: NSObject {
+        let handler: () -> Void
+        init(_ handler: @escaping () -> Void) { self.handler = handler }
+        @objc func fire() { handler() }
+    }
+
+    private let trampoline: Trampoline
+
     init(title: String, keyEquivalent: String = "", handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(fire), keyEquivalent: keyEquivalent)
-        self.target = self
+        self.trampoline = Trampoline(handler)
+        super.init(title: title, action: #selector(Trampoline.fire), keyEquivalent: keyEquivalent)
+        self.target = trampoline
     }
     required init(coder: NSCoder) { fatalError("not supported") }
-    @objc private func fire() { handler() }
 }
 
 /// Owns the menu-bar item and builds its menu on demand. Each entry row copies that
@@ -18,6 +29,9 @@ final class ActionMenuItem: NSMenuItem {
 /// settings, updates, account, and quit.
 @MainActor
 final class StatusItemController: NSObject, NSMenuDelegate {
+    /// How many entry rows the menu shows before deferring to Quick Search.
+    private static let maxMenuEntries = 30
+
     private let statusItem: NSStatusItem
     private let vault: EnteVault
     private let preferences: Preferences
@@ -109,10 +123,21 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 menu.addItem(item)
             } else {
                 // Show only the name — never the live code — and copy it on click.
-                for entry in entries {
+                // A huge vault would make the menu unusable (and slow to build), so cap
+                // it and point at Quick Search for the rest.
+                let visible = entries.prefix(Self.maxMenuEntries)
+                for entry in visible {
                     menu.addItem(ActionMenuItem(title: entry.displayName) { [weak self] in
                         self?.copy(entry)
                     })
+                }
+                if entries.count > visible.count {
+                    let hotkey = preferences.hotkey.displayString
+                    let more = NSMenuItem(
+                        title: "…and \(entries.count - visible.count) more — use Quick Search (\(hotkey))",
+                        action: nil, keyEquivalent: "")
+                    more.isEnabled = false
+                    menu.addItem(more)
                 }
             }
         }
@@ -143,14 +168,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         flashCopied()
     }
 
+    /// Monotonic token so overlapping flashes can't restore a stale glyph (two quick
+    /// copies used to capture the checkmark as "original" and leave it stuck).
+    private var flashGeneration = 0
+
     /// Briefly swaps the menu-bar glyph to a checkmark to confirm a copy.
     private func flashCopied() {
         guard let button = statusItem.button else { return }
-        let original = button.image
+        flashGeneration += 1
+        let generation = flashGeneration
         button.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Copied")
         button.image?.isTemplate = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
-            button.image = original
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+            guard let self, self.flashGeneration == generation else { return }
+            // Redraw from current state instead of a captured image, so a lock-state
+            // change during the flash can't be clobbered either.
+            self.configureButton(locked: self.appLock.isLocked)
         }
     }
 }
