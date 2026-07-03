@@ -22,7 +22,13 @@ final class QuickSearchModel: ObservableObject {
     /// Whether rows reveal the live code (off by default — codes are masked and typed).
     @Published var showCodes: Bool = false
 
+    /// True while the ⌘ key is held — rows reveal their ⌘1…⌘9 quick-pick badges.
+    @Published var showIndices: Bool = false
+
     private var allEntries: [AuthEntry] = []
+
+    /// Whether the vault has any entries at all (drives the empty-state copy).
+    var hasEntries: Bool { !allEntries.isEmpty }
 
     /// Most-recently-used entry ids (most recent first), used to bias result ordering.
     var recentIDs: [String] = [] {

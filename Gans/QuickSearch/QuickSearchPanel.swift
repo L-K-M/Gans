@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 import Carbon.HIToolbox
 
 /// A borderless panel that can become key (so its search field accepts typing).
@@ -18,6 +19,13 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
     private var keyMonitor: Any?
     private var tickTimer: Timer?
     private var previousApp: NSRunningApplication?
+    private var cancellables = Set<AnyCancellable>()
+
+    /// Screen-anchored geometry, fixed for as long as the panel is up: the panel is
+    /// pinned by its TOP edge and horizontal center, so the search field never jumps
+    /// while the result list below it grows and shrinks.
+    private var panelTop: CGFloat = 0
+    private var panelCenterX: CGFloat = 0
 
     private let preferences: Preferences
     /// Supplies the current decrypted entries when the panel opens.
@@ -32,6 +40,15 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
     init(preferences: Preferences) {
         self.preferences = preferences
         super.init()
+
+        // Result changes resize the panel in place (top edge pinned).
+        model.$results
+            .receive(on: RunLoop.main)
+            .sink { [weak self] results in
+                guard let self, self.isVisible else { return }
+                self.layoutPanel(rows: results.count)
+            }
+            .store(in: &cancellables)
     }
 
     var isVisible: Bool { panel?.isVisible == true }
@@ -62,7 +79,7 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
         let panel = self.panel ?? makePanel()
         self.panel = panel
 
-        positionPanel(panel)
+        positionPanel()
         installKeyMonitor()
         startTicking()
 
@@ -70,17 +87,28 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
         panel.makeKeyAndOrderFront(nil)
     }
 
-    func hide() {
+    /// Dismisses the panel. `restoreFocus` hands activation back to the app that was
+    /// frontmost before Quick Search opened — right for Esc/hotkey dismissal, wrong when
+    /// the user clicked into another app (resign-key) or a commit is about to activate
+    /// the target itself.
+    func hide(restoreFocus: Bool = true) {
+        let wasVisible = isVisible
         panel?.orderOut(nil)
         removeKeyMonitor()
         stopTicking()
+        model.showIndices = false
+        if restoreFocus, wasVisible {
+            previousApp?.activate(options: [])
+        }
     }
 
     // MARK: Panel construction
 
     private func makePanel() -> KeyablePanel {
         let panel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 80),
+            contentRect: NSRect(x: 0, y: 0,
+                                width: QuickSearchMetrics.width,
+                                height: QuickSearchMetrics.panelHeight(forRows: 0)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false
         )
@@ -99,23 +127,33 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
             self?.commit(entry)
         }
         let hosting = NSHostingView(rootView: root)
-        hosting.translatesAutoresizingMaskIntoConstraints = false
+        // The controller owns the panel frame (see layoutPanel): with the hosting view's
+        // own sizing constraints active, SwiftUI would resize the borderless window with
+        // an uncontrolled anchor and the panel would jump around while typing.
+        hosting.sizingOptions = []
         panel.contentView = hosting
-        panel.setContentSize(hosting.fittingSize)
         return panel
     }
 
-    private func positionPanel(_ panel: NSPanel) {
-        panel.layoutIfNeeded()
-        let size = panel.contentView?.fittingSize ?? NSSize(width: 560, height: 80)
-        panel.setContentSize(size)
-
+    private func positionPanel() {
         let screen = screenWithMouse() ?? NSScreen.main
         guard let frame = screen?.visibleFrame else { return }
-        let x = frame.midX - size.width / 2
-        // Sit a bit above vertical center, like Spotlight.
-        let y = frame.midY + frame.height * 0.12 - size.height / 2
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        panelCenterX = frame.midX
+        // Sit a bit above vertical center, like Spotlight. This is the fixed TOP edge;
+        // the panel grows downward from here.
+        panelTop = frame.midY + frame.height * 0.25
+        layoutPanel(rows: model.results.count)
+    }
+
+    /// Applies the deterministic frame for the current row count, top edge pinned.
+    private func layoutPanel(rows: Int) {
+        guard let panel else { return }
+        let height = QuickSearchMetrics.panelHeight(forRows: rows)
+        let frame = NSRect(x: panelCenterX - QuickSearchMetrics.width / 2,
+                           y: panelTop - height,
+                           width: QuickSearchMetrics.width,
+                           height: height)
+        panel.setFrame(frame, display: true)
     }
 
     private func screenWithMouse() -> NSScreen? {
@@ -127,11 +165,19 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
 
     private func installKeyMonitor() {
         removeKeyMonitor()
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
 
-            // ⌘1…⌘9 instantly commits the Nth visible result.
-            if event.modifierFlags.contains(.command),
+            if event.type == .flagsChanged {
+                // Holding ⌘ reveals the ⌘1…⌘9 quick-pick badges on the rows.
+                self.model.showIndices = event.modifierFlags.contains(.command)
+                return event
+            }
+
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+
+            // ⌘1…⌘9 (exactly ⌘, so ⌘⇧1 etc. stay out of the way) commits the Nth result.
+            if modifiers == .command,
                let digit = event.charactersIgnoringModifiers.flatMap({ Int($0) }),
                (1...9).contains(digit) {
                 let index = digit - 1
@@ -141,13 +187,24 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
                 return nil
             }
 
+            // ⌘C copies the selected code instead of inserting it.
+            if modifiers == .command,
+               event.charactersIgnoringModifiers?.lowercased() == "c",
+               let entry = self.model.selectedEntry {
+                self.copyCommit(entry)
+                return nil
+            }
+
             switch Int(event.keyCode) {
             case kVK_DownArrow:
                 self.model.moveSelection(down: true); return nil
             case kVK_UpArrow:
                 self.model.moveSelection(down: false); return nil
             case kVK_Return, kVK_ANSI_KeypadEnter:
-                if let entry = self.model.selectedEntry { self.commit(entry) }
+                if let entry = self.model.selectedEntry {
+                    // ⌥Return copies without touching the previous app's focus.
+                    if modifiers == .option { self.copyCommit(entry) } else { self.commit(entry) }
+                }
                 return nil
             case kVK_Escape:
                 if self.model.query.isEmpty { self.hide() } else { self.model.query = "" }
@@ -184,18 +241,35 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
         let code = entry.code()
         let target = previousApp
         preferences.recordUsage(entry.id)
-        hide()
+        hide(restoreFocus: false) // the injector re-activates the target itself
         CodeInjector.deliver(code: code, to: target,
                              mode: preferences.deliveryMode,
                              alsoCopy: preferences.alsoCopyWhenTyping,
-                             clearClipboardAfter: preferences.clipboardClearDelay)
+                             clearClipboardAfter: preferences.clipboardClearDelay) { result in
+            // Without the Accessibility permission the code silently lands on the
+            // clipboard instead of being typed — say so, or the commit feels broken.
+            if case .copiedOnly = result {
+                ToastPanel.show("Copied to the clipboard — grant Accessibility in Settings to insert codes directly")
+            }
+        }
+    }
+
+    /// Copies the code without injecting it (⌥Return / ⌘C), returning focus to where
+    /// the user was.
+    private func copyCommit(_ entry: AuthEntry) {
+        let code = entry.code()
+        preferences.recordUsage(entry.id)
+        hide()
+        CodeInjector.copyToClipboard(code, clearAfter: preferences.clipboardClearDelay)
+        ToastPanel.show("Code copied")
     }
 
     // MARK: NSWindowDelegate
 
     /// Dismiss like Spotlight when focus leaves the panel (click another app/window).
+    /// No focus restore — the user just chose somewhere else to be.
     func windowDidResignKey(_ notification: Notification) {
         guard isVisible else { return }
-        hide()
+        hide(restoreFocus: false)
     }
 }
