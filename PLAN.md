@@ -217,7 +217,7 @@ and cache.
 - `.github/workflows/release.yml`: on `v*` tag → Release build, ad‑hoc `codesign -s -`,
   `.zip` + `.dmg`, GitHub Release with Gatekeeper‑bypass notes.
 - `scripts/release.sh` bumps `MARKETING_VERSION` + README marker, commits, tags.
-- `clean-build.sh` resets the Swift build service for local clean builds.
+- `scripts/build.sh --clean` resets the Swift build service for local clean builds.
 
 ---
 

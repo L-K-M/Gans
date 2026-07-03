@@ -33,8 +33,11 @@ app is **unsigned** (no Developer ID / notarization), so on first launch run
 # Requires Xcode 16.2+. Swift packages (swift-sodium, BigInt) resolve automatically.
 xcodebuild -project Gans.xcodeproj -scheme Gans -destination 'platform=macOS' build
 
-# or a clean Release build that reveals the product in Finder:
-./clean-build.sh
+# or an incremental Release build that reveals the product in Finder:
+./scripts/build.sh
+
+# --clean resets the wedged Swift Build service and does a full clean rebuild:
+./scripts/build.sh --clean
 ```
 
 ## Dependencies
