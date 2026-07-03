@@ -19,6 +19,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             accountSection
+            mostUsedSection
             quickSearchSection
             securitySection
             permissionsSection
@@ -80,6 +81,32 @@ struct SettingsView: View {
                     Text("2 minutes").tag(120)
                 }
             }
+            Toggle("Honk on copy 🪿", isOn: $preferences.honkOnCopy)
+        }
+    }
+
+    private struct UsageRow: Identifiable {
+        let entry: AuthEntry
+        let count: Int
+        var id: String { entry.id }
+    }
+
+    /// Top entries by frecency-tracked use count — a small "you reach for these" summary.
+    private var mostUsed: [UsageRow] {
+        let byID = Dictionary(vault.entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return preferences.mostUsed(limit: 5).compactMap { item in
+            byID[item.id].map { UsageRow(entry: $0, count: item.count) }
+        }
+    }
+
+    @ViewBuilder
+    private var mostUsedSection: some View {
+        if !mostUsed.isEmpty {
+            Section("Most used") {
+                ForEach(mostUsed) { row in
+                    LabeledContent(row.entry.displayName, value: "\(row.count)×")
+                }
+            }
         }
     }
 
@@ -99,10 +126,7 @@ struct SettingsView: View {
                     .foregroundStyle(hasAccessibility ? .green : .orange)
                 Spacer()
                 if !hasAccessibility {
-                    Button("Grant…") {
-                        _ = CodeInjector.hasAccessibilityPermission(prompt: true)
-                        openAccessibilitySettings()
-                    }
+                    Button("Grant…") { CodeInjector.openAccessibilitySettings() }
                 }
             }
             Text("Required only to type or paste a code into another app. Copying from the menu works without it.")
@@ -129,8 +153,4 @@ struct SettingsView: View {
         }
     }
 
-    private func openAccessibilitySettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
-        NSWorkspace.shared.open(url)
-    }
 }
