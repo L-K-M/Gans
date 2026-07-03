@@ -48,12 +48,33 @@ actor EnteAPI {
         return try await send(type, method: "POST", path: path, query: [], body: encoded, authenticated: authenticated)
     }
 
+    /// Percent-encodes one query name/value. `URLComponents.queryItems` would leave `+`
+    /// literal (RFC 3986 allows it), but Ente's Go server form-decodes queries, turning
+    /// `+` into a space — so `alice+ente@example.com` used to arrive as
+    /// `alice ente@example.com` and 404 during login. `&` and `=` are escaped too since
+    /// we splice the encoded pairs together ourselves.
+    static func encodeQueryComponent(_ raw: String) -> String {
+        raw.addingPercentEncoding(withAllowedCharacters: queryComponentAllowed) ?? raw
+    }
+
+    private static let queryComponentAllowed: CharacterSet = {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=")
+        return allowed
+    }()
+
     private func send<T: Decodable>(_ type: T.Type, method: String, path: String,
                                     query: [URLQueryItem], body: Data?, authenticated: Bool) async throws -> T {
         var componentsURL = baseURL.appendingPathComponent(path)
         if !query.isEmpty {
             var comps = URLComponents(url: componentsURL, resolvingAgainstBaseURL: false)
-            comps?.queryItems = query
+            comps?.percentEncodedQuery = query
+                .map { item in
+                    let name = Self.encodeQueryComponent(item.name)
+                    guard let value = item.value else { return name }
+                    return "\(name)=\(Self.encodeQueryComponent(value))"
+                }
+                .joined(separator: "&")
             if let withQuery = comps?.url { componentsURL = withQuery }
         }
 
