@@ -74,6 +74,29 @@ final class SearchFilterTests: XCTestCase {
         XCTAssertEqual(result.first?.issuer, "GitLab")
     }
 
+    func testMultiTokenQueryMatchesAcrossFieldsInAnyOrder() {
+        XCTAssertEqual(SearchFilter.filter(entries, query: "github alice").map(\.issuer), ["GitHub"])
+        XCTAssertEqual(SearchFilter.filter(entries, query: "alice github").map(\.issuer), ["GitHub"])
+        XCTAssertTrue(SearchFilter.filter(entries, query: "github dave").isEmpty) // AND, not OR
+    }
+
+    func testMultiTokenRankUsesWorstToken() {
+        // "git bob" → GitLab: "git" prefix (0) + "bob" account prefix (1) → worst 1.
+        // Nothing else matches both tokens.
+        XCTAssertEqual(SearchFilter.filter(entries, query: "git bob").map(\.issuer), ["GitLab"])
+    }
+
+    func testPinnedFloatsToTopForEmptyQueryAndWithinRank() {
+        var pinnedGoogle = entry(issuer: "Google", account: "carol@github.io")
+        pinnedGoogle.pinned = true
+        let mixed = [entries[0], entries[1], pinnedGoogle, entries[3]]
+
+        XCTAssertEqual(SearchFilter.filter(mixed, query: "").first?.issuer, "Google")
+        // Within the same match rank, pinned beats recency.
+        let result = SearchFilter.filter(mixed, query: "g", recentIDs: ["GitHub-alice"])
+        XCTAssertEqual(result.first?.issuer, "Google")
+    }
+
     func testNextIndexClampsAndWraps() {
         XCTAssertEqual(SearchFilter.nextIndex(count: 3, current: 0, down: true), 1)
         XCTAssertEqual(SearchFilter.nextIndex(count: 3, current: 2, down: true), 2) // clamp at end
