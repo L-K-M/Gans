@@ -72,6 +72,8 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
         previousApp = NSWorkspace.shared.frontmostApplication
 
         model.showCodes = preferences.showCodesInQuickSearch
+        model.peek = false
+        model.targetAppName = previousApp?.localizedName
         model.recentIDs = preferences.recentlyUsedIDs
         model.setEntries(entriesProvider())
         model.reset()
@@ -97,6 +99,7 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
         removeKeyMonitor()
         stopTicking()
         model.showIndices = false
+        model.peek = false
         if restoreFocus, wasVisible {
             previousApp?.activate(options: [])
         }
@@ -169,8 +172,10 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
             guard let self else { return event }
 
             if event.type == .flagsChanged {
-                // Holding ⌘ reveals the ⌘1…⌘9 quick-pick badges on the rows.
+                // Holding ⌘ reveals the ⌘1…⌘9 quick-pick badges; holding ⌥ peeks at the
+                // masked codes (releasing re-masks) — fast, no settings round-trip.
                 self.model.showIndices = event.modifierFlags.contains(.command)
+                self.model.peek = event.modifierFlags.contains(.option)
                 return event
             }
 
@@ -238,10 +243,25 @@ final class QuickSearchController: NSObject, NSWindowDelegate {
     // MARK: Commit
 
     private func commit(_ entry: AuthEntry) {
-        let code = entry.code()
         let target = previousApp
         preferences.recordUsage(entry.id)
         hide(restoreFocus: false) // the injector re-activates the target itself
+
+        // Never type a code that dies mid-submit: if a time-based code has ≤2s left,
+        // briefly wait for the next window and deliver the fresh code instead.
+        let remaining = entry.isTimeBased ? entry.secondsRemaining() : Int.max
+        if entry.isTimeBased, remaining <= 2 {
+            ToastPanel.show("Waiting for a fresh code…", duration: Double(remaining) + 0.6)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(remaining) + 0.15) { [weak self] in
+                guard let self else { return }
+                self.deliver(entry.code(), to: target) // recomputed in the new window
+            }
+        } else {
+            deliver(entry.code(), to: target)
+        }
+    }
+
+    private func deliver(_ code: String, to target: NSRunningApplication?) {
         CodeInjector.deliver(code: code, to: target,
                              mode: preferences.deliveryMode,
                              alsoCopy: preferences.alsoCopyWhenTyping,

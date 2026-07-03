@@ -25,6 +25,8 @@ struct AuthEntry: Identifiable, Equatable {
     var isTrashed: Bool = false
     /// Free-form user note from Ente (kept for display/search; empty when absent).
     var note: String = ""
+    /// User tags from Ente's `codeDisplay` (filterable as `#tag` in Quick Search).
+    var tags: [String] = []
 
     /// A human label: "Issuer (account)" or just one when the other is empty.
     var displayName: String {
@@ -138,17 +140,19 @@ extension AuthEntry {
         var pinned = false
         var trashed = false
         var note = ""
+        var tags: [String] = []
         if let raw = query["codedisplay"], let data = raw.data(using: .utf8),
            let display = try? JSONDecoder().decode(CodeDisplay.self, from: data) {
             pinned = display.pinned ?? false
             trashed = display.trashed ?? false
             note = display.note ?? ""
+            tags = (display.tags ?? []).filter { !$0.isEmpty }
         }
 
         return AuthEntry(id: id, kind: kind, issuer: issuer, account: account,
                          secret: secret, algorithm: algorithm,
                          digits: typeString == "steam" ? 5 : digits, period: period,
-                         pinned: pinned, isTrashed: trashed, note: note)
+                         pinned: pinned, isTrashed: trashed, note: note, tags: tags)
     }
 
     /// The subset of Ente's `codeDisplay` JSON that Gans understands. Unknown fields are
@@ -157,6 +161,7 @@ extension AuthEntry {
         var pinned: Bool?
         var trashed: Bool?
         var note: String?
+        var tags: [String]?
     }
 
     // MARK: Escaping helpers

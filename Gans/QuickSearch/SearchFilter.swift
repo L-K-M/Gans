@@ -17,6 +17,10 @@ enum SearchFilter {
     /// token ranks prefix → substring → subsequence (fuzzy); a multi-token query ranks
     /// by its *worst* token so a real prefix hit always beats a fuzzy one.
     ///
+    /// A token beginning with `#` is a **tag filter**: `#work` keeps only entries carrying
+    /// a matching Ente tag, combinable with text ("github #work"). Tag tokens filter but
+    /// don't contribute to the text rank.
+    ///
     /// Ordering within a rank: pinned entries first, then recently used (`recentIDs`,
     /// most recent first), then name. An empty query returns everything in that order.
     static func filter(_ entries: [AuthEntry], query: String, recentIDs: [String] = []) -> [AuthEntry] {
@@ -35,16 +39,31 @@ enum SearchFilter {
             return entries.sorted(by: byPinnedRecencyName)
         }
 
-        let tokens = fold(trimmed).split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let allTokens = fold(trimmed).split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let tagNeedles = allTokens.filter { $0.hasPrefix("#") && $0.count > 1 }.map { String($0.dropFirst()) }
+        let textTokens = allTokens.filter { !$0.hasPrefix("#") }
+        // A query of just "#" (or "#" plus whitespace) has nothing to match on.
+        guard !tagNeedles.isEmpty || !textTokens.isEmpty else {
+            return entries.sorted(by: byPinnedRecencyName)
+        }
+
         let scored: [(entry: AuthEntry, rank: Int)] = entries.compactMap { entry in
+            // Every tag needle must match one of the entry's tags (prefix or substring).
+            if !tagNeedles.isEmpty {
+                let entryTags = entry.tags.map(fold)
+                for needle in tagNeedles {
+                    guard entryTags.contains(where: { $0.hasPrefix(needle) || $0.contains(needle) }) else { return nil }
+                }
+            }
+
             let issuer = fold(entry.issuer)
             let account = fold(entry.account)
             let display = fold(entry.displayName)
 
             var worst = 0
-            for token in tokens {
+            for token in textTokens {
                 guard let rank = tokenRank(token, issuer: issuer, account: account, display: display) else {
-                    return nil // every token must match somewhere
+                    return nil // every text token must match somewhere
                 }
                 worst = max(worst, rank)
             }

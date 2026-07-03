@@ -22,8 +22,18 @@ final class QuickSearchModel: ObservableObject {
     /// Whether rows reveal the live code (off by default — codes are masked and typed).
     @Published var showCodes: Bool = false
 
+    /// True while the ⌥ key is held — temporarily reveals masked codes ("peek").
+    @Published var peek: Bool = false
+
     /// True while the ⌘ key is held — rows reveal their ⌘1…⌘9 quick-pick badges.
     @Published var showIndices: Bool = false
+
+    /// Whether codes should be visible right now (the preference, or a live ⌥-peek).
+    var codesVisible: Bool { showCodes || peek }
+
+    /// Localized name of the app that had focus when the panel opened — for the
+    /// "↩ to fill into <App>" type-ahead hint. Nil when unknown.
+    @Published var targetAppName: String?
 
     private var allEntries: [AuthEntry] = []
 

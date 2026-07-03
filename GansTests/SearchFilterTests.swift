@@ -97,6 +97,23 @@ final class SearchFilterTests: XCTestCase {
         XCTAssertEqual(result.first?.issuer, "Google")
     }
 
+    func testTagFilterWithHashToken() {
+        var work = entry(issuer: "GitHub", account: "alice")
+        work.tags = ["Work", "dev"]
+        var personal = entry(issuer: "GitLab", account: "bob")
+        personal.tags = ["personal"]
+        let set = [work, personal]
+
+        XCTAssertEqual(SearchFilter.filter(set, query: "#work").map(\.issuer), ["GitHub"])
+        XCTAssertEqual(SearchFilter.filter(set, query: "#personal").map(\.issuer), ["GitLab"])
+        // Text token AND tag token together.
+        XCTAssertEqual(SearchFilter.filter(set, query: "git #work").map(\.issuer), ["GitHub"])
+        // A tag that matches nothing yields nothing.
+        XCTAssertTrue(SearchFilter.filter(set, query: "#nope").isEmpty)
+        // A lone '#' is not a tag filter — treat it as an empty query.
+        XCTAssertEqual(SearchFilter.filter(set, query: "#").count, 2)
+    }
+
     func testNextIndexClampsAndWraps() {
         XCTAssertEqual(SearchFilter.nextIndex(count: 3, current: 0, down: true), 1)
         XCTAssertEqual(SearchFilter.nextIndex(count: 3, current: 2, down: true), 2) // clamp at end
