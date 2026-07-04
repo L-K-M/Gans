@@ -3,7 +3,7 @@
 A native macOS menu-bar client for [Ente Auth](https://ente.io/auth/) — your end-to-end
 encrypted 2FA codes, one keystroke away.
 
-**Version:** <!-- version -->1.2.0<!-- /version -->
+**Version:** <!-- version -->1.5.0<!-- /version -->
 
 ![Screenshot](screenshot.png)
 
