@@ -110,7 +110,7 @@ struct QuickSearchView: View {
         .frame(height: QuickSearchMetrics.emptyStateHeight)
     }
 
-    /// A quiet key-hint bar, so ⌥↩ and ⌘1–9 are discoverable without documentation.
+    /// A quiet key-hint bar, so ⌥-peek, ⌥↩, and ⌘1–9 are discoverable without docs.
     private var footer: some View {
         HStack(spacing: 14) {
             // When the query has narrowed to a single hit, name the app the code will be
@@ -121,6 +121,11 @@ struct QuickSearchView: View {
                 keyHint("↩", "Insert")
             }
             keyHint("⌥↩", "Copy")
+            // Peeking only means something while codes are masked (the default). When the
+            // "Show codes" preference is on, the codes are already visible, so skip it.
+            if !model.showCodes {
+                keyHint("⌥", "Peek")
+            }
             keyHint("⌘1–9", "Quick pick")
             Spacer()
             keyHint("esc", "Dismiss")
