@@ -23,7 +23,7 @@ encrypted 2FA codes, one keystroke away.
 
 ## Install
 
-Download the latest `.dmg` from [Releases](https://github.com/L-K-M/Gans/releases). The
+Download the latest `.dmg` from [Releases](https://github.com/L-K-M/Gans/releases/latest). The
 app is **unsigned** (no Developer ID / notarization), so on first launch run 
 `xattr -dr com.apple.quarantine /Applications/Gans.app`
 
