@@ -74,3 +74,10 @@ fastlane/test_output
 .idea/
 .codenomad/
 .vscode/
+
+# Python (Linux port)
+__pycache__/
+*.pyc
+linux/dist/
+linux/build/
+linux/gans/VERSION
