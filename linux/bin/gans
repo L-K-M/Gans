@@ -1,0 +1,15 @@
+#!/usr/bin/python3
+# Launcher for Gans. Works from the source tree (linux/bin/gans) and installed as
+# /usr/bin/gans (the package ships the modules in /usr/share/gans).
+import os
+import sys
+
+_here = os.path.dirname(os.path.realpath(__file__))
+for candidate in (os.path.join(_here, ".."), "/usr/share/gans"):
+    if os.path.isdir(os.path.join(candidate, "gans")):
+        sys.path.insert(0, os.path.normpath(candidate))
+        break
+
+from gans.cli import main  # noqa: E402
+
+sys.exit(main())
