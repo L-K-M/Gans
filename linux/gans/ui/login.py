@@ -92,7 +92,6 @@ class LoginWindow(Gtk.Window):
         self._rendering = False
         self.set_resizable(False)
         self.set_position(Gtk.WindowPosition.CENTER)
-        self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         root.set_border_width(PADDING)
@@ -374,10 +373,6 @@ class LoginWindowController:
     def close(self) -> None:
         if self.window is not None:
             self.window.hide()
-
-    @property
-    def is_visible(self) -> bool:
-        return self.window is not None and self.window.get_visible()
 
     def _build(self) -> LoginWindow:
         if install_css is not None:

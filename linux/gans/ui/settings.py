@@ -572,10 +572,6 @@ class SettingsWindowController:
         if self.window is not None:
             self.window.hide()
 
-    @property
-    def is_visible(self) -> bool:
-        return self.window is not None and self.window.get_visible()
-
     def _build(self) -> SettingsWindow:
         if install_css is not None:
             install_css()

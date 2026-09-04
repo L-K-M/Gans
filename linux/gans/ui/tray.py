@@ -101,8 +101,11 @@ class _StatusIconBackend:
         self._icon.connect("activate", lambda _icon: on_activate())
         self._icon.connect("popup-menu", self._on_popup_menu)
 
-    def _on_popup_menu(self, _icon, _button: int, _activate_time: int) -> None:
-        self._menu.popup_at_pointer(None)
+    def _on_popup_menu(self, _icon, button: int, activate_time: int) -> None:
+        # The classic (pre-3.22) popup places the menu at the pointer from the button
+        # and time the tray hands us; `popup_at_pointer` would need a current GDK event,
+        # which the XEmbed tray's signal doesn't guarantee.
+        self._menu.popup(None, None, None, None, button, activate_time)
 
     def set_icon(self, name: str, description: str) -> None:
         self._icon.set_from_icon_name(name)

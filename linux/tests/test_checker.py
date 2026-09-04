@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -309,7 +310,10 @@ class UpdateDialogTests(unittest.TestCase):
         return dialogs[0]
 
     def button_labels(self, dialog):
-        return [button.get_label() for button in dialog.get_action_area().get_children()]
+        with warnings.catch_warnings():   # get_action_area is deprecated but the only order-preserving view
+            warnings.simplefilter("ignore", DeprecationWarning)
+            buttons = dialog.get_action_area().get_children()
+        return [button.get_label() for button in buttons]
 
     def test_update_available_dialog(self):
         from gans.semver import SemanticVersion
