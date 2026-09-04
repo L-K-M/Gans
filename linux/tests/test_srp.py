@@ -28,6 +28,8 @@ class _Server:
 
     def verify(self, A_b64, m1_b64):
         A = int.from_bytes(b64.decode_standard(A_b64), "big")
+        if A % srp.N == 0:  # RFC 5054 §2.5.4: the server must abort on A ≡ 0 (mod N)
+            return None
         u = int.from_bytes(H(srp._pad(A), srp._pad(self.B)), "big")
         S = pow(A * pow(self.v, u, srp.N), self.b, srp.N)
         expected_m1 = H(srp.serialize(A), srp.serialize(self.B), srp.serialize(S))
@@ -68,13 +70,15 @@ class SRPTests(unittest.TestCase):
             session.compute_m1(b64.encode_standard(srp.serialize(srp.N)))  # B ≡ 0 mod N
         with self.assertRaises(SRPError):
             session.compute_m1(b64.encode_standard(b""))
+        with self.assertRaises(SRPError):
+            session.compute_m1(b64.encode_standard(srp.serialize(srp.N + 5)))  # B >= N
         self.assertFalse(session.verify_server_proof("AAAA", "AAAA"))  # nothing computed yet
 
     def test_a_is_512_bytes_or_less_and_minimal(self):
         session = EnteSRP.begin("user", bytes(16), bytes(16))
         raw = b64.decode_standard(session.srp_a_base64)
         self.assertLessEqual(len(raw), 512)
-        self.assertNotEqual(raw[0], 0)
+        self.assertTrue(raw and raw[0] != 0)
 
     def test_serialize_is_minimal_big_endian(self):
         self.assertEqual(srp.serialize(0), b"")

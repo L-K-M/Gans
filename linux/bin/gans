@@ -9,6 +9,8 @@ for candidate in (os.path.join(_here, ".."), "/usr/share/gans"):
     if os.path.isdir(os.path.join(candidate, "gans")):
         sys.path.insert(0, os.path.normpath(candidate))
         break
+else:
+    sys.exit("gans: cannot locate the gans package (expected ../gans or /usr/share/gans)")
 
 from gans.cli import main  # noqa: E402
 

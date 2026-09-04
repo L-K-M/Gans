@@ -45,6 +45,18 @@ class TOTPGeneratorTests(unittest.TestCase):
         for counter, code in enumerate(expected):
             self.assertEqual(otp.code(SHA1_SEED, counter, 6, OTPAlgorithm.SHA1), code)
 
+    def test_counter_is_clamped_into_uint64(self):
+        # struct.pack(">Q") rejects negatives and >= 2**64; both are attacker-reachable.
+        self.assertEqual(otp.code(SHA1_SEED, -1, 6, OTPAlgorithm.SHA1), otp.code(SHA1_SEED, 0, 6, OTPAlgorithm.SHA1))
+        self.assertEqual(otp.code(SHA1_SEED, 2 ** 64 + 7, 6, OTPAlgorithm.SHA1),
+                         otp.code(SHA1_SEED, 2 ** 64 - 1, 6, OTPAlgorithm.SHA1))
+        self.assertEqual(len(otp.totp(SHA1_SEED, -1e9)), 6)  # pre-1970 clock
+
+    def test_period_of_zero_or_less_does_not_divide_by_zero(self):
+        self.assertEqual(otp.totp(SHA1_SEED, 59, period=0), otp.totp(SHA1_SEED, 59, period=1))
+        self.assertEqual(otp.steam(SHA1_SEED, 59, period=-5), otp.steam(SHA1_SEED, 59, period=1))
+        self.assertEqual(otp.seconds_remaining(59, period=0), 1)
+
     def test_seconds_remaining(self):
         self.assertEqual(otp.seconds_remaining(0, 30), 30)
         self.assertEqual(otp.seconds_remaining(10, 30), 20)

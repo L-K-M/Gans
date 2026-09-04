@@ -33,7 +33,7 @@ class SemanticVersion:
         parts = number_part.split(".")
         components: List[int] = []
         for part in parts:
-            if not part.isdigit():
+            if not part.isdecimal():  # isdigit() admits e.g. '²', which int() rejects
                 return None
             components.append(int(part))
         if not components:
@@ -71,7 +71,11 @@ class SemanticVersion:
         return not (self < other) and not (other < self)
 
     def __hash__(self) -> int:
-        return hash((tuple(self.components), self.prerelease))
+        # `1.2` == `1.2.0`, so trailing zeros must not change the hash.
+        components = list(self.components)
+        while len(components) > 1 and components[-1] == 0:
+            components.pop()
+        return hash((tuple(components), self.prerelease))
 
 
 SemanticVersion.ZERO = SemanticVersion.parse("0")

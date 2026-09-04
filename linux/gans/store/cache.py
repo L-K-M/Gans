@@ -60,9 +60,9 @@ class EntityCache:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             temporary = self._path.with_suffix(".json.tmp")
-            with open(temporary, "w", encoding="utf-8") as handle:
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle)
-            os.chmod(temporary, 0o600)
             os.replace(temporary, self._path)
         except OSError as error:
             log.ente.error("Couldn't save the entity cache: %s", error)

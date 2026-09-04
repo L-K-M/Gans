@@ -59,7 +59,8 @@ class AuthEntry:
     issuer: str
     #: e.g. "alice@example.com" — the specific account.
     account: str
-    secret: bytes
+    #: Never part of ``repr()``: a stray debug log must not leak the shared secret.
+    secret: bytes = field(repr=False)
     algorithm: OTPAlgorithm
     digits: int
     period: int

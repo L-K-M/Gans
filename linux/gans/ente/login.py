@@ -166,8 +166,8 @@ class EnteLogin:
     @classmethod
     def sanitized_accounts_base(cls, raw: str) -> str:
         """``accountsUrl`` comes from the login response, so a hostile/MITM server could try
-        to point the browser at an attacker-controlled page. Only honor it when it's an
-        HTTPS Ente host; otherwise fall back to the canonical accounts host."""
+        to point the browser at an attacker-controlled page. Only honor its host when it's
+        an HTTPS Ente host; otherwise fall back to the canonical accounts host."""
         try:
             components = urlsplit(raw or "")
         except ValueError:
@@ -176,7 +176,9 @@ class EnteLogin:
         if components.scheme.lower() != "https" or not host:
             return cls.DEFAULT_ACCOUNTS_URL
         if host == "ente.io" or host.endswith(".ente.io"):
-            return raw
+            # Rebuild from the validated host only: userinfo, a non-default port, path,
+            # query and fragment that rode along in `raw` must not reach the browser.
+            return urlunsplit(("https", host, "", "", ""))
         return cls.DEFAULT_ACCOUNTS_URL
 
     def wait_for_passkey_token(self, passkey_session_id: str, timeout: float = 180, poll_interval: float = 2,

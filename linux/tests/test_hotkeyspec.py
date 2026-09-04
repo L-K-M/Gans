@@ -24,6 +24,13 @@ class HotkeySpecTests(unittest.TestCase):
         self.assertEqual(HotkeySpec.from_accelerator("<Primary>a"), HotkeySpec(key="a", control=True))
         self.assertEqual(HotkeySpec.from_accelerator("<Mod1><Mod4>Return"), HotkeySpec(key="Return", alt=True, super_=True))
 
+    def test_rejects_non_gdk_notation(self):
+        self.assertIsNone(HotkeySpec.from_accelerator("ctrl+alt+a"))
+        self.assertIsNone(HotkeySpec.from_accelerator("Ctrl+Alt+Space"))
+        self.assertIsNone(HotkeySpec.from_accelerator("<Control>a+b"))
+        for text in ["<Control>a", "<Alt>space", "<Shift>F1", "<Super>minus", "<Control>KP_Enter", "<Alt>dead_acute"]:
+            self.assertIsNotNone(HotkeySpec.from_accelerator(text), text)
+
     def test_rejects_malformed(self):
         self.assertIsNone(HotkeySpec.from_accelerator("<Control>"))
         self.assertIsNone(HotkeySpec.from_accelerator("<Bogus>a"))

@@ -33,6 +33,16 @@ class ModelTests(unittest.TestCase):
         self.assertIsInstance(with_keys.key_attributes, KeyAttributes)
         self.assertEqual(with_keys.accounts_url, "https://accounts.ente.io")
 
+    def test_present_but_malformed_optional_fields_are_decoding_errors(self):
+        with self.assertRaises(DecodingError):
+            AuthorizationResponse.from_json({"twoFactorSessionID": 12345})
+        with self.assertRaises(DecodingError):
+            AuthorizationResponse.from_json({"id": True})
+        with self.assertRaises(DecodingError):
+            AuthEntityDiff.from_json({"diff": [{"id": "1", "isDeleted": False, "createdAt": "yesterday"}]})
+        # Absent and null are both simply absent.
+        self.assertIsNone(AuthorizationResponse.from_json({"twoFactorSessionID": None}).two_factor_session_id)
+
     def test_bool_is_not_an_int(self):
         with self.assertRaises(DecodingError):
             KeyAttributes.from_json({"kekSalt": "a", "encryptedKey": "b", "keyDecryptionNonce": "c", "publicKey": "d",

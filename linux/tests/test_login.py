@@ -41,6 +41,17 @@ class PasskeyURLTests(unittest.TestCase):
     def test_keeps_legitimate_ente_subdomain(self):
         self.assertEqual(EnteLogin.sanitized_accounts_base("https://accounts.ente.io"), "https://accounts.ente.io")
 
+    def test_sanitized_base_is_rebuilt_from_the_host_only(self):
+        # userinfo, port, path, query and fragment must not survive into the browser URL
+        self.assertEqual(EnteLogin.sanitized_accounts_base("https://evil@accounts.ente.io:8443/x?q=1#f"),
+                         "https://accounts.ente.io")
+        parts, items = self._components(EnteLogin.passkey_verification_url(
+            "https://evil@accounts.ente.io:8443/x?q=1#f", "s", "io.ente.auth"))
+        self.assertEqual(parts.netloc, "accounts.ente.io")
+        self.assertEqual(parts.path, "/passkeys/verify")
+        self.assertEqual(set(items), {"passkeySessionID", "redirect", "clientPackage"})
+        self.assertEqual(EnteLogin.sanitized_accounts_base("https://Accounts.ENTE.io/"), "https://accounts.ente.io")
+
     def test_userinfo_trick_is_rejected(self):
         # "https://accounts.ente.io@evil.com" has host evil.com, not ente.io.
         self.assertEqual(EnteLogin.sanitized_accounts_base("https://accounts.ente.io@evil.com"), EnteLogin.DEFAULT_ACCOUNTS_URL)

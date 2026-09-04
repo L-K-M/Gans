@@ -39,7 +39,10 @@ _STEAM_ALPHABET = "23456789BCDFGHJKMNPQRTVWXY"
 
 
 def _hmac(counter: int, secret: bytes, algorithm: OTPAlgorithm) -> bytes:
-    """HMAC of an 8-byte big-endian counter under ``secret``."""
+    """HMAC of an 8-byte big-endian counter under ``secret``. The counter is clamped into
+    the uint64 range: an otpauth ``counter`` is attacker-controlled and a pre-1970 clock
+    yields a negative TOTP step — neither may crash code generation."""
+    counter = min(max(int(counter), 0), 0xFFFF_FFFF_FFFF_FFFF)
     return hmac.new(bytes(secret), struct.pack(">Q", counter), algorithm.digestmod).digest()
 
 
@@ -51,6 +54,12 @@ def _truncate(digest: bytes) -> int:
 
 def _now() -> float:
     return _time.time()
+
+
+def _safe_period(period: int) -> int:
+    """A period of 0 or less would divide by zero; the parser already clamps, but the
+    generator must be safe on its own."""
+    return max(int(period), 1)
 
 
 def code(secret: bytes, counter: int, digits: int, algorithm: OTPAlgorithm) -> str:
@@ -67,14 +76,14 @@ def totp(secret: bytes, time: Optional[float] = None, period: int = 30, digits: 
          algorithm: OTPAlgorithm = OTPAlgorithm.SHA1) -> str:
     """A time-based code (TOTP) at a given instant (epoch seconds; now when omitted)."""
     instant = _now() if time is None else time
-    counter = int(math.floor(instant / float(period)))
+    counter = int(math.floor(instant / float(_safe_period(period))))
     return code(secret, counter, digits, algorithm)
 
 
 def steam(secret: bytes, time: Optional[float] = None, period: int = 30) -> str:
     """A Steam Guard code: 5 chars over the Steam alphabet, SHA1, period 30."""
     instant = _now() if time is None else time
-    counter = int(math.floor(instant / float(period)))
+    counter = int(math.floor(instant / float(_safe_period(period))))
     value = _truncate(_hmac(counter, secret, OTPAlgorithm.SHA1))
     result = []
     for _ in range(5):
@@ -86,4 +95,5 @@ def steam(secret: bytes, time: Optional[float] = None, period: int = 30) -> str:
 def seconds_remaining(time: Optional[float] = None, period: int = 30) -> int:
     """Seconds remaining in the current TOTP window (for the countdown ring)."""
     instant = _now() if time is None else time
+    period = _safe_period(period)
     return period - (int(instant) % period)

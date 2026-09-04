@@ -262,6 +262,7 @@ class EnteVault:
             cipher = b64.decode_standard(entity.encrypted_data)
             header = b64.decode_standard(entity.header)
             if cipher is None or header is None:
+                log.ente.error("Skipped a cached entity with malformed base64: %s", entity.id)
                 continue
             try:
                 plaintext = crypto.secret_stream_open_single_chunk(cipher, header, auth_key)
@@ -272,7 +273,9 @@ class EnteVault:
             # Entries in Ente's trash stay in the diff with codeDisplay.trashed set; they
             # must not appear (or type codes) here.
             entry = AuthEntry.parse(uri, entity.id)
-            if entry is not None and not entry.is_trashed:
+            if entry is None:
+                log.ente.error("Skipped an entity whose otpauth URI didn't parse: %s", entity.id)
+            elif not entry.is_trashed:
                 result.append(entry)
         result.sort(key=lambda entry: fold(entry.display_name))
         return result

@@ -75,7 +75,8 @@ class GansApplication(Gtk.Application):
         self._boot()
 
     def do_activate(self) -> None:
-        # Reached only through plain `gans` after HANDLES_COMMAND_LINE decided to activate.
+        # Reached via D-Bus Activate (e.g. a DBusActivatable launcher); plain `gans` runs are
+        # delivered to do_command_line instead, thanks to HANDLES_COMMAND_LINE.
         if self._booted:
             self.quick_search.show()
 

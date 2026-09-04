@@ -107,7 +107,7 @@ class Session:
         if b_bytes is None:
             raise SRPError(SRPError.BAD_SERVER_VALUE)
         B = int.from_bytes(b_bytes, "big")
-        if B % N == 0:
+        if B >= N or B % N == 0:  # the server always sends 0 < B < N; anything else is malformed
             raise SRPError(SRPError.BAD_SERVER_VALUE)
 
         k = _multiplier()
@@ -121,6 +121,8 @@ class Session:
         base = (B % N + N - kgx) % N
         exponent = self._a + u * self._x
         S = pow(base, exponent, N)
+        if S == 0:  # only reachable with a degenerate B; never derive the well-known key H(PAD(0))
+            raise SRPError(SRPError.BAD_SERVER_VALUE)
 
         self._cached_k = _hash(_pad(S))
 

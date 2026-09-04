@@ -76,7 +76,9 @@ class HotkeySpec:
             flags[token] = True
             rest = rest[match.end():]
         key = rest.strip()
-        if not key or re.search(r"[\s<>]", key):
+        # GDK key names are identifier-like (`space`, `KP_Enter`, `dead_acute`); anything else
+        # (e.g. the "Ctrl+Alt+Space" notation) is not a hotkey we can register.
+        if not re.fullmatch(r"[A-Za-z0-9_]+", key):
             return None
         return cls(key=key, **flags)
 

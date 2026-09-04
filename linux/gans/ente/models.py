@@ -25,12 +25,18 @@ def _require(data: dict, key: str, kind) -> Any:
 
 
 def _optional(data: dict, key: str, kind) -> Any:
+    """Absent or JSON ``null`` → ``None``; present but wrongly typed → ``DecodingError`` (a
+    silently dropped field could flip a login down the wrong branch)."""
     value = data.get(key)
     if value is None:
         return None
+    if kind is int and isinstance(value, bool):
+        raise DecodingError(f"'{key}' is malformed")
     if kind is int and isinstance(value, float) and value.is_integer():
         value = int(value)
-    return value if isinstance(value, kind) and not (kind is int and isinstance(value, bool)) else None
+    if not isinstance(value, kind):
+        raise DecodingError(f"'{key}' is malformed")
+    return value
 
 
 def _dict(data: Any, what: str) -> dict:

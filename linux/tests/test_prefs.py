@@ -40,10 +40,10 @@ class PreferencesTests(unittest.TestCase):
 
     def test_recent_limit(self):
         prefs = Preferences(self.path)
-        for index in range(60):
+        for index in range(Preferences.RECENT_LIMIT + 10):
             prefs.record_usage(str(index))
         self.assertEqual(len(prefs.recently_used_ids), Preferences.RECENT_LIMIT)
-        self.assertEqual(prefs.recently_used_ids[0], "59")
+        self.assertEqual(prefs.recently_used_ids[0], str(Preferences.RECENT_LIMIT + 9))
 
     def test_clipboard_clear_defaults_and_delay(self):
         prefs = Preferences(self.path)

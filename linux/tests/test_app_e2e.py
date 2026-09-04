@@ -55,8 +55,18 @@ class AppEndToEndTests(unittest.TestCase):
             "XDG_CURRENT_DESKTOP": "XFCE",   # no GNOME schemas here → X11 grab / none backend
         })
         (home / "run").mkdir(mode=0o700)
-        cls.app = subprocess.Popen([sys.executable, "-m", "gans"], cwd=str(LINUX_DIR), env=cls.env,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # A log file rather than PIPEs: nobody drains them until the end, and a chatty
+        # GANS_DEBUG run could fill the 64 KiB pipe buffer and stall the app.
+        cls.log_path = home / "app.log"
+        cls.log_file = open(cls.log_path, "w", encoding="utf-8")
+        try:
+            cls.app = subprocess.Popen([sys.executable, "-m", "gans"], cwd=str(LINUX_DIR), env=cls.env,
+                                       stdout=cls.log_file, stderr=subprocess.STDOUT, text=True)
+        except Exception:
+            cls.log_file.close()
+            cls.session.stop()
+            cls.tmp.cleanup()
+            raise
 
     @classmethod
     def tearDownClass(cls):
@@ -66,6 +76,8 @@ class AppEndToEndTests(unittest.TestCase):
                 cls.app.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 cls.app.kill()
+                cls.app.wait()
+        cls.log_file.close()
         cls.session.stop()
         cls.tmp.cleanup()
 
@@ -94,10 +106,11 @@ class AppEndToEndTests(unittest.TestCase):
         quit_result = self._cli("quit")
         self.assertEqual(quit_result.returncode, 0, quit_result.stderr)
         self.assertTrue(_wait_for(lambda: self.app.poll() is not None, timeout=15), "app did not quit")
-        stdout, stderr = self.app.communicate(timeout=5)
-        self.assertEqual(self.app.returncode, 0, stderr)
-        self.assertNotIn("Traceback", stderr)
-        self.assertNotIn("CRITICAL", stderr)
+        self.log_file.flush()
+        log = self.log_path.read_text(encoding="utf-8")
+        self.assertEqual(self.app.returncode, 0, log)
+        self.assertNotIn("Traceback", log)
+        self.assertNotIn("CRITICAL", log)
 
 
 if __name__ == "__main__":

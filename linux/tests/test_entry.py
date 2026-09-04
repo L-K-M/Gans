@@ -130,6 +130,14 @@ class OtpAuthURITests(unittest.TestCase):
         eight = AuthEntry.parse("otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=8", "41")
         self.assertEqual(eight.formatted_code(59), "9428 7082")
 
+    def test_repr_never_contains_the_secret(self):
+        entry = AuthEntry.parse("otpauth://totp/GitHub:alice?secret=JBSWY3DPEHPK3PXP", "50")
+        text = repr(entry)
+        self.assertNotIn("JBSWY3DPEHPK3PXP", text)
+        self.assertNotIn(repr(entry.secret), text)
+        self.assertIn("GitHub", text)
+        self.assertIn("alice", text)
+
     def test_fraction_remaining(self):
         entry = AuthEntry.parse("otpauth://totp/x?secret=JBSWY3DPEHPK3PXP", "42")
         self.assertEqual(entry.fraction_remaining(0), 1.0)

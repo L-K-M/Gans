@@ -87,7 +87,7 @@ class FakeAPI(EnteAPI):
         self.fixture = fixture
         self.pages = []          # list of diff pages returned in order of sinceTime requests
         self.seen_tokens = []
-        self.fail_with = None    # APIError to raise on the next authenticated call
+        self.fail_with = None    # APIError to raise on the next call (authenticated or not)
         self.calls = []
 
     def _send(self, method, path, query, body, authenticated):
@@ -115,7 +115,7 @@ class KeyUnwrapTests(unittest.TestCase):
         self.assertEqual(keys.master_key, fixture["master_key"])
         self.assertEqual(keys.secret_key, fixture["secret_key"])
         self.assertEqual(keys.token, fixture["token"])
-        self.assertTrue(keys.token.endswith("=") or True)  # padding preserved when present
+        self.assertTrue(keys.token.endswith("="))  # 32 token bytes → one '=' of padding, preserved
 
     def test_wrong_password_fails_cleanly(self):
         fixture = _fixture()

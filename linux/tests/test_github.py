@@ -21,13 +21,16 @@ class GitHubReleaseTests(unittest.TestCase):
 
     def test_prerelease_scan_picks_highest_non_draft(self):
         client = GitHubReleaseClient("L-K-M", "Gans")
-        client._fetch = lambda path: [
+        releases = [
             {"tag_name": "v1.4.0", "html_url": "a"},
             {"tag_name": "v2.0.0", "html_url": "b", "draft": True},
             {"tag_name": "v1.5.0-beta.1", "html_url": "c", "prerelease": True},
             {"tag_name": "garbage", "html_url": "d"},
         ]
+        # GitHub's `releases/latest` already excludes drafts and pre-releases.
+        client._fetch = lambda path: releases[0] if path == "releases/latest" else releases
         self.assertEqual(client.latest_release(include_prereleases=True).tag_name, "v1.5.0-beta.1")
+        self.assertEqual(client.latest_release(include_prereleases=False).tag_name, "v1.4.0")
         client._fetch = lambda path: []
         with self.assertRaises(ClientError):
             client.latest_release(include_prereleases=True)

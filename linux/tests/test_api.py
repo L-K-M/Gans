@@ -67,6 +67,8 @@ class EnteAPITransportTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()
+        cls.thread.join(timeout=5)
 
     def setUp(self):
         _Handler.requests.clear()

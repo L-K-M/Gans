@@ -77,6 +77,7 @@ class DisplaySession:
         os.environ["NO_AT_BRIDGE"] = "1"   # no accessibility bus in the sandbox
         os.environ["GTK_A11Y"] = "none"
 
+        os.environ.pop("DBUS_SESSION_BUS_ADDRESS", None)  # never fall back to the ambient bus
         dbus = None
         if shutil.which("dbus-daemon"):
             dbus = subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address", "--nopidfile"],
@@ -106,7 +107,7 @@ def pump(milliseconds: int = 100) -> None:
     from gi.repository import GLib, Gtk
     deadline = time.monotonic() + milliseconds / 1000.0
     while True:
-        while Gtk.events_pending():
+        while Gtk.events_pending() and time.monotonic() < deadline:
             Gtk.main_iteration_do(False)
         if time.monotonic() >= deadline:
             break

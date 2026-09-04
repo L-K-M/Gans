@@ -23,6 +23,15 @@ class SemanticVersionTests(unittest.TestCase):
         self.assertFalse(V.parse("1.2.0") < V.parse("1.2.0-beta"))
         self.assertTrue(V.parse("1.2.0-alpha") < V.parse("1.2.0-beta"))
 
+    def test_hash_agrees_with_eq(self):
+        self.assertEqual(hash(V.parse("1.2")), hash(V.parse("1.2.0")))
+        self.assertEqual(len({V.parse("1.2"), V.parse("1.2.0"), V.parse("v1.2.0.0")}), 1)
+        self.assertNotEqual(hash(V.parse("1.2.0-beta")), hash(V.parse("1.2.0")))
+
+    def test_non_decimal_digits_do_not_raise(self):
+        self.assertIsNone(V.parse("v1.²"))
+        self.assertEqual(V.parse("1.٣").components, [1, 3])  # Unicode decimals are what int() accepts
+
     def test_str(self):
         self.assertEqual(str(V.parse(" v1.2.3 ")), "v1.2.3")
 

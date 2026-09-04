@@ -1,5 +1,5 @@
 """RFC 4648 base32 decoder, used for the ``secret`` in ``otpauth://`` URIs. Tolerant of
-lowercase, spaces, dashes, and missing ``=`` padding (authenticator secrets are routinely
+lowercase, whitespace, dashes, and missing ``=`` padding (authenticator secrets are routinely
 shared without it)."""
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ _LOOKUP = {character: index for index, character in enumerate(_ALPHABET)}
 
 
 def decode(text: str) -> bytes | None:
-    cleaned = text.upper().replace(" ", "").replace("-", "").strip("=")
+    cleaned = "".join(text.split()).upper().replace("-", "").rstrip("=")
     if not cleaned:
         return None
 
