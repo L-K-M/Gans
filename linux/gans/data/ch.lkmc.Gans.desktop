@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Gans
+GenericName=Two-factor codes
+Comment=Ente Auth codes, one keystroke away
+Exec=gans %u
+Icon=ch.lkmc.Gans
+Terminal=false
+Categories=Utility;Security;
+Keywords=2FA;TOTP;OTP;Ente;authenticator;
+StartupNotify=false
+MimeType=x-scheme-handler/ente-cli;
+X-GNOME-UsesNotifications=true
