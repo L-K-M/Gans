@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for software centres. The <releases> entry is stamped by
+  packaging/build-deb.sh: @VERSION@ becomes the released version (the git tag is the
+  source of truth) and @DATE@ the build date, so the installed file always matches
+  the package it ships in.
+-->
+<component type="desktop-application">
+  <id>ch.lkmc.Gans</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Unlicense</project_license>
+
+  <name>Gans</name>
+  <summary>Ente Auth 2FA codes, one keystroke away</summary>
+  <developer id="ch.lkmc">
+    <name>L-K-M</name>
+  </developer>
+
+  <description>
+    <p>
+      Gans is a tray-resident client for Ente Auth, the open-source two-factor
+      authenticator. It signs in to your Ente account, syncs your end-to-end
+      encrypted codes, and keeps them one keystroke away.
+    </p>
+    <ul>
+      <li>Quick Search: press the global hotkey (Ctrl+Alt+Space by default), type to
+        filter, press Return, and the current code is typed straight into the field
+        that had focus.</li>
+      <li>Tray menu: every entry with its live code; click one to copy it.</li>
+      <li>End-to-end encrypted: your password never leaves the device, secrets are
+        decrypted in memory only, and the on-disk cache holds nothing but Ente's
+        already-encrypted data.</li>
+      <li>Optional app lock that asks for your account password before showing codes.</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">ch.lkmc.Gans.desktop</launchable>
+  <provides>
+    <binary>gans</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/L-K-M/Gans</url>
+  <url type="bugtracker">https://github.com/L-K-M/Gans/issues</url>
+  <url type="vcs-browser">https://github.com/L-K-M/Gans</url>
+
+  <categories>
+    <category>Utility</category>
+    <category>Security</category>
+  </categories>
+  <keywords>
+    <keyword>2FA</keyword>
+    <keyword>TOTP</keyword>
+    <keyword>OTP</keyword>
+    <keyword>Ente</keyword>
+    <keyword>authenticator</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="@VERSION@" date="@DATE@">
+      <url>https://github.com/L-K-M/Gans/releases/tag/v@VERSION@</url>
+    </release>
+  </releases>
+</component>

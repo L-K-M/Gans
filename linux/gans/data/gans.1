@@ -1,0 +1,108 @@
+.\" Manual page for gans(1). Rendered into /usr/share/man/man1/gans.1.gz by
+.\" packaging/build-deb.sh. Keep the option/command list in step with gans/cli.py.
+.TH GANS 1 "2026-09-04" "Gans" "User Commands"
+.SH NAME
+gans \- Ente Auth two-factor codes, one keystroke away (tray agent)
+.SH SYNOPSIS
+.B gans
+.RI [ command ]
+.br
+.B gans
+.RB { \-\-version | \-\-help }
+.SH DESCRIPTION
+.B gans
+is a tray-resident client for Ente Auth, the open-source two-factor
+authenticator. It signs in to your Ente account, syncs your end-to-end
+encrypted codes, and keeps them one keystroke away: the tray menu lists every
+entry with its live code (click to copy), and the global hotkey (Ctrl+Alt+Space
+by default) opens Quick Search, a search field that types the selected code
+into the previous field on X11, or copies it on Wayland.
+.PP
+Only one instance runs per session. Running
+.B gans
+again while it is running forwards the command to the running instance over
+D-Bus, so a desktop keyboard shortcut can simply run
+.BR "gans toggle" .
+.SH COMMANDS
+.TP
+.I (none)
+Start the tray agent, or open Quick Search if it is already running.
+.TP
+.B toggle
+Show or hide Quick Search in the running instance. This is the command to bind
+to a keyboard shortcut when Gans cannot register the hotkey itself.
+.TP
+.B search
+Show Quick Search.
+.TP
+.B settings
+Open the Settings window.
+.TP
+.B quit
+Quit the running instance.
+.TP
+.BI ente-cli:// URL
+The passkey redirect from the browser during sign-in. The desktop file registers
+.B gans
+as the handler for the
+.B ente-cli
+URL scheme so this is normally invoked by the browser, not by hand.
+.SH OPTIONS
+.TP
+.BR \-V ", " \-\-version
+Print the version and exit.
+.TP
+.BR \-h ", " \-\-help
+Print a short usage summary and exit.
+.SH ENVIRONMENT
+.TP
+.B GANS_GDK_BACKEND
+GDK backend to run on. Gans defaults to X11 (XWayland in a Wayland session)
+for tray clipboard ownership and popup placement. Set this to
+.B wayland
+to use native Wayland. All Wayland sessions use clipboard delivery;
+XWayland cannot reliably identify the focused native window.
+.TP
+.B GANS_DEBUG
+When set to a non-empty value, enables debug logging on standard error. Logs
+never contain secrets, tokens, or codes.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/gans/preferences.json
+Preferences (hotkey, delivery mode, clipboard clearing, app lock, usage
+statistics). Defaults to
+.IR ~/.config/gans/preferences.json .
+.TP
+.I $XDG_DATA_HOME/gans/entities.json
+Cache of the account's entries exactly as Ente stores them: still encrypted,
+useless without the key held in the keyring. Defaults to
+.IR ~/.local/share/gans/entities.json .
+.TP
+.I ~/.config/autostart/ch.lkmc.Gans.desktop
+Present when "Launch at login" is enabled in Settings.
+.TP
+.I /usr/share/polkit-1/actions/ch.lkmc.gans.policy
+The polkit action behind the optional app lock (auth_self: the desktop asks for
+your own password).
+.PP
+The session token and the authenticator key are stored in the Secret Service
+(GNOME Keyring, KWallet, or KeePassXC) under the
+.B gans
+application attribute. Without a Secret Service the session is kept in memory
+only and you sign in again after a restart; nothing secret is ever written to
+disk in plaintext.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 2
+Unknown command or option.
+.SH SEE ALSO
+.UR https://github.com/L-K-M/Gans
+Project page and Linux notes
+.UE
+.br
+.UR https://ente.io/auth/
+Ente Auth
+.UE

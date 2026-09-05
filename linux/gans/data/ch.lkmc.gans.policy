@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  The app lock (Preferences.require_unlock). macOS asks for Touch ID or the device
+  password through LAContext; on Linux the desktop's polkit agent asks for the user's
+  own password (auth_self) through this action, driven by pkcheck with
+  user interaction allowed (see gans/platform/applock.py). auth_self everywhere: no
+  admin rights are involved, this is purely "prove you are the logged-in user".
+-->
+<policyconfig>
+  <vendor>Gans</vendor>
+  <vendor_url>https://github.com/L-K-M/Gans</vendor_url>
+  <icon_name>ch.lkmc.Gans</icon_name>
+
+  <action id="ch.lkmc.gans.unlock">
+    <description>Unlock Gans</description>
+    <message>Unlock Gans to access your codes</message>
+    <icon_name>ch.lkmc.Gans</icon_name>
+    <defaults>
+      <allow_any>auth_self</allow_any>
+      <allow_inactive>auth_self</allow_inactive>
+      <allow_active>auth_self</allow_active>
+    </defaults>
+  </action>
+</policyconfig>
