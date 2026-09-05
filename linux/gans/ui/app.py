@@ -44,10 +44,24 @@ from .tray import StatusItemController  # noqa: E402
 __all__ = ["GansApplication"]
 
 
+#: Shown when something needs the session before the keyring has been opened.
+STILL_STARTING = "Gans is still starting up — one moment."
+
+
 def _dispatch(fn: Callable[[], object]) -> None:
     """Runs ``fn`` on the GTK main loop exactly once (idle callbacks repeat when they
     return a truthy value, so the return value is swallowed)."""
     GLib.idle_add(lambda: (fn(), False)[1])
+
+
+def _uptime() -> float:
+    """Seconds on a clock that keeps counting through suspend. ``time.monotonic()`` is
+    CLOCK_MONOTONIC, which stops while the machine sleeps — a refresh throttle stamped
+    with it would still look fresh after hours of sleep and swallow the wake-up sync.
+    ``Date()`` on macOS spans sleep; CLOCK_BOOTTIME is the Linux equivalent (wall clock
+    as the fallback)."""
+    clock = getattr(time, "CLOCK_BOOTTIME", None)
+    return time.clock_gettime(clock) if clock is not None else time.time()
 
 
 class GansApplication(Gtk.Application):
@@ -84,7 +98,10 @@ class GansApplication(Gtk.Application):
         args = list(command_line.get_arguments())[1:]
         if not self._booted:
             return 1  # crypto failed to initialize; do_startup already logged it
-        command = args[0] if args else ""
+        self._handle_command(args[0] if args else "", command_line.get_is_remote())
+        return 0
+
+    def _handle_command(self, command: str, is_remote: bool) -> None:
         if command == "toggle":
             self.quick_search.toggle()
         elif command == "search":
@@ -98,11 +115,10 @@ class GansApplication(Gtk.Application):
             # ceremony finishes. We register that scheme purely so the redirect brings
             # Gans forward; the token is still retrieved by polling, so there's nothing
             # to parse from the URL.
-            self.login_window.show()
-        elif command_line.get_is_remote():
+            self._show_login()
+        elif is_remote:
             # A second plain `gans` (launcher/desktop icon click) opens Quick Search.
             self.quick_search.show()
-        return 0
 
     def do_shutdown(self) -> None:
         if self._booted:
@@ -149,7 +165,7 @@ class GansApplication(Gtk.Application):
             self.vault, self.prefs, self.app_lock,
             on_quick_search=self.quick_search.show,
             on_settings=self.show_settings,
-            on_login=self.login_window.show,
+            on_login=self._show_login,
             on_check_for_updates=self.update_checker.check_now,
             on_unlock=self._prompt_unlock,
             on_quit=self.quit,
@@ -181,7 +197,7 @@ class GansApplication(Gtk.Application):
 
         self.quick_search.entries_provider = entries_provider
         self.quick_search.is_signed_in = lambda: self.vault.is_signed_in
-        self.quick_search.on_needs_login = self.login_window.show
+        self.quick_search.on_needs_login = self._show_login
         self.quick_search.is_locked = lambda: not self._session_started or self.app_lock.is_locked
         self.quick_search.on_locked = self._on_quick_search_locked
         # A Quick Search commit gets the same confirmation as a menu copy (glyph blink,
@@ -189,7 +205,7 @@ class GansApplication(Gtk.Application):
         self.quick_search.on_committed = self.tray.confirm_copy
 
     def _wire_settings(self) -> None:
-        self.settings_window.on_sign_in = self.login_window.show
+        self.settings_window.on_sign_in = self._show_login
         self.settings_window.on_hotkey_changed = self._register_hotkey
 
     def _register_hotkey(self) -> None:
@@ -230,9 +246,19 @@ class GansApplication(Gtk.Application):
         if not self.vault.is_signed_in:
             self.login_window.show()
 
+    def _show_login(self) -> None:
+        """Sign-in entry point for the tray, Settings, Quick Search and the passkey
+        redirect. Until the keyring is open (its prompt is exactly when people reach for
+        the tray) a login would land in the interim memory keyring before the app-lock
+        decision has been made, so hold it — like Quick Search does."""
+        if not self._session_started:
+            self.toast.show(STILL_STARTING, duration=3)
+            return
+        self.login_window.show()
+
     def _on_quick_search_locked(self) -> None:
         if not self._session_started:
-            self.toast.show("Gans is still starting up — one moment.", duration=3)
+            self.toast.show(STILL_STARTING, duration=3)
             return
         self._prompt_unlock()
 
@@ -273,9 +299,9 @@ class GansApplication(Gtk.Application):
     def _refresh_if_stale(self, ignore_throttle: bool = False) -> None:
         if not self.vault.is_signed_in or self.app_lock.is_locked:
             return
-        if not ignore_throttle and time.monotonic() - self._last_auto_refresh <= self.AUTO_REFRESH_THROTTLE:
+        if not ignore_throttle and _uptime() - self._last_auto_refresh <= self.AUTO_REFRESH_THROTTLE:
             return
-        self._last_auto_refresh = time.monotonic()
+        self._last_auto_refresh = _uptime()
         self._run_in_thread(self.vault.refresh)
 
     def _observe_vault(self) -> None:

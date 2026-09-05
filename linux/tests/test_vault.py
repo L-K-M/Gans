@@ -5,6 +5,7 @@ sealed-box token → secretbox authenticator key → secretstream entities)."""
 import json
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -89,6 +90,7 @@ class FakeAPI(EnteAPI):
         self.seen_tokens = []
         self.fail_with = None    # APIError to raise on the next call (authenticated or not)
         self.calls = []
+        self.hold_diff = None    # an Event: diff requests block until it is set
 
     def _send(self, method, path, query, body, authenticated):
         self.calls.append((method, path, dict(query)))
@@ -100,6 +102,8 @@ class FakeAPI(EnteAPI):
         if path == "authenticator/key":
             return self.fixture["authenticator_key"]
         if path == "authenticator/entity/diff":
+            if self.hold_diff is not None:
+                self.hold_diff.wait(10)
             since = int(dict(query)["sinceTime"])
             for page_since, page in self.pages:
                 if page_since == since:
@@ -215,10 +219,71 @@ class VaultTests(unittest.TestCase):
         late.restore()
         self.assertEqual([e.issuer for e in late.entries], ["Amazon", "GitHub"])
 
+    def test_adopting_a_keyring_carries_over_a_login_completed_meanwhile(self):
+        # The user signs in while the Secret Service prompt is still pending: the session
+        # sits in the interim memory keyring and must survive the swap to the real one
+        # (which may hold an older session of its own — the fresh login wins).
+        late = EnteVault(self.api, None, self.cache, dispatch=lambda fn: fn())
+        late.complete_login(AuthorizationResponse.from_json(self.fixture["authorization"]), PASSWORD, "alice@example.com")
+        real = MemoryKeyring()
+        real.set("ente.token", b"old-token")
+        real.set("ente.authKey", bytes(32))
+        late.adopt_keyring(real)
+        self.assertTrue(late.is_signed_in)
+        self.assertEqual(real.get("ente.token"), self.fixture["token"].encode())
+        self.assertEqual(real.get("ente.authKey"), self.fixture["auth_key"])
+        self.assertEqual(real.get("ente.email"), b"alice@example.com")
+        # The app restores right after adopting: still the same session, nothing lost.
+        late.restore()
+        self.assertIs(late.state, VaultState.READY)
+        self.assertEqual([e.issuer for e in late.entries], ["Amazon", "GitHub"])
+        self.assertEqual(late.account_email, "alice@example.com")
+
+    def test_adopting_a_keyring_that_rejects_the_session_keeps_it_in_memory(self):
+        class RejectingKeyring(MemoryKeyring):
+            persistent = True
+
+            def set(self, account, data):
+                if account == "ente.authKey":
+                    return False
+                return super().set(account, data)
+
+        late = EnteVault(self.api, None, self.cache, dispatch=lambda fn: fn())
+        late.complete_login(AuthorizationResponse.from_json(self.fixture["authorization"]), PASSWORD, "alice@example.com")
+        rejecting = RejectingKeyring()
+        late.adopt_keyring(rejecting)
+        self.assertTrue(late.is_signed_in)
+        self.assertFalse(late.keyring_persistent)                # the interim keyring stays in use
+        self.assertIsNone(rejecting.get("ente.token"))           # no half-written session left behind
+        late.restore()
+        self.assertEqual([e.issuer for e in late.entries], ["Amazon", "GitHub"])
+
+    def test_adopting_a_keyring_without_an_interim_login_just_swaps(self):
+        late = EnteVault(self.api, None, self.cache, dispatch=lambda fn: fn())
+        real = MemoryKeyring()
+        late.adopt_keyring(real)
+        self.assertFalse(late.is_signed_in)
+        self.assertIsNone(real.get("ente.token"))
+
     def test_restore_without_session_is_signed_out(self):
         self.vault.restore()
         self.assertIs(self.vault.state, VaultState.SIGNED_OUT)
         self.assertEqual(self.api.calls, [])
+
+    def test_restore_without_session_clears_a_stale_in_memory_session(self):
+        # The keyring items vanished (or a keyring without the session was adopted): the
+        # entries and key of the earlier session must go too, not linger as SIGNED_OUT + codes.
+        self._login()
+        self.keyring.remove("ente.token")
+        self.vault.restore()
+        self.assertIs(self.vault.state, VaultState.SIGNED_OUT)
+        self.assertEqual(self.vault.entries, [])
+        self.assertIsNone(self.vault.account_email)
+        self.assertIsNone(self.vault._auth_key)
+        self.assertIsNone(self.api._auth_token)
+        calls_before = len(self.api.calls)
+        self.vault.refresh()
+        self.assertEqual(len(self.api.calls), calls_before)      # nothing to sync with
 
     def test_pagination_stops_on_short_page_and_stuck_cursor(self):
         self._login()
@@ -273,14 +338,45 @@ class VaultTests(unittest.TestCase):
     def test_concurrent_refreshes_coalesce(self):
         self._login()
         before = len(self.api.calls)
-        threads = [threading.Thread(target=self.vault.refresh) for _ in range(5)]
+        # Hold the first diff request open until every thread has entered refresh(): a
+        # correct vault makes the others wait for that one pass (one request in total);
+        # without coalescing each thread would issue its own.
+        self.api.hold_diff = threading.Event()
+        entered = threading.Semaphore(0)
+
+        class CountingLock:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __enter__(self):
+                self._inner.acquire()
+                entered.release()
+
+            def __exit__(self, *exc):
+                self._inner.release()
+
+        self.vault._refresh_lock = CountingLock(self.vault._refresh_lock)
+        finished = []
+        threads = [threading.Thread(target=lambda: (self.vault.refresh(), finished.append(time.monotonic())))
+                   for _ in range(5)]
         for thread in threads:
             thread.start()
+        deadline = time.monotonic() + 5
+        for _ in threads:
+            entered.acquire(timeout=max(0.0, deadline - time.monotonic()))
+        released_at = time.monotonic()
+        self.api.hold_diff.set()
         for thread in threads:
-            thread.join()
+            thread.join(timeout=10)
+        self.assertEqual(len(finished), 5)
+        self.assertTrue(all(at >= released_at for at in finished))  # everyone waited for the in-flight pass
         diff_calls = [c for c in self.api.calls[before:] if c[1] == "authenticator/entity/diff"]
-        self.assertLessEqual(len(diff_calls), 5)
-        self.assertGreaterEqual(len(diff_calls), 1)
+        self.assertEqual(len(diff_calls), 1)
+        self.assertEqual([c for c in self.api.calls[before:] if c[1] != "authenticator/entity/diff"], [])
+        self.assertIs(self.vault.state, VaultState.READY)
+        # Once that pass is over, a new refresh really goes to the network again.
+        self.vault.refresh()
+        self.assertEqual(len([c for c in self.api.calls[before:] if c[1] == "authenticator/entity/diff"]), 2)
 
 
 if __name__ == "__main__":

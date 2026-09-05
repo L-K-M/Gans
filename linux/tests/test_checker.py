@@ -296,18 +296,29 @@ class UpdateDialogTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.prefs = Preferences(Path(self.directory.name) / "preferences.json")
-        self.checker = UpdateChecker(Configuration(owner="L-K-M", repo="Gans", app_name="Gans", current_version="1.2.0"),
-                                     self.prefs, dispatch=lambda fn: fn(), client=FakeClient())
+        self.configuration = Configuration(owner="L-K-M", repo="Gans", app_name="Gans", current_version="1.2.0")
+        self.checker = UpdateChecker(self.configuration, self.prefs, dispatch=lambda fn: fn(), client=FakeClient())
         self.opened = []
         self.checker._open_release_page = self.opened.append
+        self.addCleanup(lambda: [dialog.destroy() for dialog in self.visible_dialogs()])
+
+    def visible_dialogs(self):
+        return [window for window in self.Gtk.Window.list_toplevels()
+                if isinstance(window, self.Gtk.MessageDialog) and window.get_visible()]
 
     def dialog(self):
         from tests.harness import pump
         pump(50)
-        dialogs = [window for window in self.Gtk.Window.list_toplevels()
-                   if isinstance(window, self.Gtk.MessageDialog) and window.get_visible()]
+        dialogs = self.visible_dialogs()
         self.assertEqual(len(dialogs), 1)
         return dialogs[0]
+
+    def wait_for(self, predicate, timeout=5.0):
+        from tests.harness import pump
+        deadline = time.monotonic() + timeout
+        while not predicate() and time.monotonic() < deadline:
+            pump(20)
+        self.assertTrue(predicate(), "condition not met in time")
 
     def button_labels(self, dialog):
         with warnings.catch_warnings():   # get_action_area is deprecated but the only order-preserving view
@@ -365,6 +376,63 @@ class UpdateDialogTests(unittest.TestCase):
         self.assertEqual(dialog.get_property("message-type"), self.Gtk.MessageType.WARNING)
         dialog.response(self.Gtk.ResponseType.OK)
         self.assertNotIn(dialog, self.Gtk.Window.list_toplevels())
+
+    def test_a_repeat_check_while_the_dialog_is_up_raises_it_instead_of_stacking(self):
+        """The macOS alert is modal, so ``isChecking`` holds until it's dismissed and a
+        second Check for Updates can't open a second alert. The GTK dialog is non-blocking,
+        so the checker has to remember it: no re-fetch, no second dialog, and Settings'
+        Check Now stays disabled until the dialog closes."""
+        from gi.repository import GLib
+        from tests.harness import pump
+        client = FakeClient(release("v1.3.0"))
+        checker = UpdateChecker(self.configuration, self.prefs, dispatch=GLib.idle_add, client=client)
+        states = []
+        checker.on_change(lambda: states.append(checker.is_checking))
+
+        checker.check_now()
+        self.wait_for(lambda: len(self.visible_dialogs()) == 1)
+        dialog = self.visible_dialogs()[0]
+        self.assertTrue(checker.is_checking)              # held while the dialog is up
+        self.assertNotIn(False, states)
+
+        checker.check_now()                                # the tray item / Check Now again
+        self.prefs.update_last_check = None                # …and the daily timer, unthrottled
+        checker.check_in_background()
+        pump(100)
+        self.assertEqual(client.calls, [False])            # no second fetch
+        self.assertEqual(self.visible_dialogs(), [dialog])  # no second dialog
+        self.assertTrue(checker.is_checking)
+
+        dialog.response(self.Gtk.ResponseType.CANCEL)      # Remind Me Later
+        pump(50)
+        self.assertNotIn(dialog, self.Gtk.Window.list_toplevels())
+        self.assertFalse(checker.is_checking)              # released only now
+        self.assertIs(states[-1], False)
+
+        checker.check_now()                                # …after which a check runs again
+        self.wait_for(lambda: len(self.visible_dialogs()) == 1)
+        self.assertEqual(client.calls, [False, False])
+        self.assertTrue(checker.is_checking)
+        self.visible_dialogs()[0].response(self.Gtk.ResponseType.OK)   # closing via the WM path too
+        pump(50)
+        self.assertFalse(checker.is_checking)
+
+    def test_up_to_date_and_error_dialogs_hold_is_checking_too(self):
+        from gi.repository import GLib
+        from tests.harness import pump
+        for client in (FakeClient(release("v1.2.0")), FakeClient(error=ClientError("GitHub returned HTTP 503."))):
+            checker = UpdateChecker(self.configuration, self.prefs, dispatch=GLib.idle_add, client=client)
+            checker.check_now()
+            self.wait_for(lambda: len(self.visible_dialogs()) == 1)
+            self.assertTrue(checker.is_checking)
+            checker.check_now()
+            pump(100)
+            self.assertEqual(len(client.calls), 1)
+            self.assertEqual(len(self.visible_dialogs()), 1)
+            self.visible_dialogs()[0].response(self.Gtk.ResponseType.OK)
+            pump(50)
+            self.assertFalse(checker.is_checking)
+            self.assertEqual(self.visible_dialogs(), [])
 
 
 if __name__ == "__main__":

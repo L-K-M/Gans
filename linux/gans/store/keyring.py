@@ -9,11 +9,13 @@ secret is ever written to disk in plaintext.
 from __future__ import annotations
 
 import threading
-from typing import Dict, Optional, Protocol
+from typing import Callable, Dict, Optional, Protocol, TypeVar
 
 from .. import log
 
 __all__ = ["Keyring", "MemoryKeyring", "SecretServiceKeyring", "open_keyring"]
+
+T = TypeVar("T")
 
 _APPLICATION = "gans"
 _LABELS = {
@@ -70,6 +72,12 @@ class SecretServiceKeyring:
 
     @classmethod
     def connect(cls) -> "SecretServiceKeyring":
+        connection, collection = cls._open()
+        return cls(connection, collection)
+
+    @staticmethod
+    def _open():
+        """A fresh bus connection + the (unlocked) default collection."""
         import secretstorage  # python3-secretstorage
 
         connection = secretstorage.dbus_init()
@@ -79,7 +87,33 @@ class SecretServiceKeyring:
             collection.unlock()
             if collection.is_locked():
                 raise RuntimeError("The default keyring collection is locked.")
-        return cls(connection, collection)
+        return connection, collection
+
+    def _reconnect(self) -> None:
+        """The daemon's sessions die with it: once gnome-keyring (or KWallet's bridge)
+        has restarted, every call on the old connection fails with ``NoSession`` for the
+        rest of the process — and the app would look signed out until relaunch. A new
+        connection, exactly as ``open_keyring()`` makes it, works again."""
+        try:
+            self._connection.close()
+        except Exception:
+            pass
+        self._connection, self._collection = self._open()
+
+    def _call(self, verb: str, operation: Callable[[], T], failure: T) -> T:
+        """Runs ``operation`` under the lock; if it fails, reconnects and retries once
+        before giving up with ``failure``."""
+        with self._lock:
+            try:
+                return operation()
+            except Exception as error:
+                log.app.warning("Secret Service %s failed (%s); reconnecting", verb, error)
+                try:
+                    self._reconnect()
+                    return operation()
+                except Exception as retry_error:
+                    log.app.error("Secret Service %s failed: %s", verb, retry_error)
+                    return failure
 
     def _attributes(self, account: str) -> Dict[str, str]:
         return {"application": _APPLICATION, "account": account}
@@ -88,38 +122,29 @@ class SecretServiceKeyring:
         return list(self._collection.search_items(self._attributes(account)))
 
     def get(self, account: str) -> Optional[bytes]:
-        with self._lock:
-            try:
-                for item in self._find(account):
-                    if item.is_locked():
-                        item.unlock()
-                    return bytes(item.get_secret())
-                return None
-            except Exception as error:
-                log.app.error("Secret Service read failed: %s", error)
-                return None
+        def read() -> Optional[bytes]:
+            for item in self._find(account):
+                if item.is_locked():
+                    item.unlock()
+                return bytes(item.get_secret())
+            return None
+        return self._call("read", read, None)
 
     def set(self, account: str, data: bytes) -> bool:
-        with self._lock:
-            try:
-                for stale in self._find(account):
-                    stale.delete()
-                self._collection.create_item(_LABELS.get(account, f"Gans — {account}"),
-                                             self._attributes(account), bytes(data), replace=True)
-                return True
-            except Exception as error:
-                log.app.error("Secret Service write failed: %s", error)
-                return False
+        def write() -> bool:
+            for stale in self._find(account):
+                stale.delete()
+            self._collection.create_item(_LABELS.get(account, f"Gans — {account}"),
+                                         self._attributes(account), bytes(data), replace=True)
+            return True
+        return self._call("write", write, False)
 
     def remove(self, account: str) -> bool:
-        with self._lock:
-            try:
-                for item in self._find(account):
-                    item.delete()
-                return True
-            except Exception as error:
-                log.app.error("Secret Service delete failed: %s", error)
-                return False
+        def delete() -> bool:
+            for item in self._find(account):
+                item.delete()
+            return True
+        return self._call("delete", delete, False)
 
 
 def open_keyring() -> Keyring:

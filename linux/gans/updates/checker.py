@@ -68,6 +68,10 @@ class UpdateChecker:
         self._client = client or GitHubReleaseClient(configuration.owner, configuration.repo)
         self._observers: List[Callable[[], None]] = []
         self._is_checking = False
+        #: The outcome dialog currently on screen, if any. macOS runs its alert modally, so
+        #: ``isChecking`` stays true until it's dismissed and a second check can't open a
+        #: second alert; the GTK dialogs are non-blocking, so this remembers the open one.
+        self._open_dialog: Optional[Gtk.Dialog] = None
         self._timer_id: Optional[int] = None
 
     # MARK: Observable state
@@ -94,7 +98,8 @@ class UpdateChecker:
 
     @property
     def is_checking(self) -> bool:
-        """True while a check is in flight (to disable a "Check Now" button, say)."""
+        """True while a check is in flight or its outcome dialog is still on screen (to
+        disable a "Check Now" button, say) — the lifetime of the macOS modal alert."""
         return self._is_checking
 
     def on_change(self, callback: Callable[[], None]) -> None:
@@ -142,6 +147,8 @@ class UpdateChecker:
 
     def _perform_check(self, user_initiated: bool) -> None:
         if self._is_checking:
+            if user_initiated and self._open_dialog is not None:
+                self._open_dialog.present()   # the outcome is already up: raise it, don't stack another
             return
         self._is_checking = True
         self._notify()
@@ -151,7 +158,10 @@ class UpdateChecker:
             try:
                 release = self._client.latest_release(allow_prereleases)
             except Exception as error:  # the client's own errors, plus anything unexpected
-                self._dispatch(lambda: self._finish(None, error, user_initiated))
+                # Bind it: `error` is unbound once the except block exits, and with a real
+                # dispatch (GLib.idle_add) the lambda runs after that.
+                failure = error
+                self._dispatch(lambda: self._finish(None, failure, user_initiated))
                 return
             self._dispatch(lambda: self._finish(release, None, user_initiated))
 
@@ -159,7 +169,8 @@ class UpdateChecker:
 
     def _finish(self, release: Optional[GitHubRelease], error: Optional[Exception], user_initiated: bool) -> bool:
         """Main-loop half of a check. ``is_checking`` clears only after the outcome has been
-        presented, so a waiting caller sees the presentation too."""
+        presented — and, when that outcome is a dialog, only once the dialog closes
+        (``_on_dialog_destroyed``), so a repeat check can't stack a second one."""
         try:
             if error is not None or release is None:
                 if user_initiated:
@@ -184,8 +195,9 @@ class UpdateChecker:
                 self.present_up_to_date()
             return False
         finally:
-            self._is_checking = False
-            self._notify()
+            if self._open_dialog is None:
+                self._is_checking = False
+            self._notify()   # is_checking and/or last_check_date changed
 
     # MARK: Presentation (main thread; overridable)
 
@@ -245,9 +257,18 @@ class UpdateChecker:
         dialog.set_keep_above(True)
         return dialog
 
-    @staticmethod
-    def _present(dialog: Gtk.Dialog) -> None:
+    def _present(self, dialog: Gtk.Dialog) -> None:
         """Non-blocking: the response signal handles the outcome and destroys the dialog,
-        so the main loop (and the tray) keep running while it's up."""
+        so the main loop (and the tray) keep running while it's up. The dialog is
+        remembered (and ``is_checking`` held) until it's destroyed."""
+        self._open_dialog = dialog
+        dialog.connect("destroy", self._on_dialog_destroyed)
         dialog.show_all()
         dialog.present()
+
+    def _on_dialog_destroyed(self, dialog: Gtk.Widget) -> None:
+        if self._open_dialog is not dialog:
+            return
+        self._open_dialog = None
+        self._is_checking = False
+        self._notify()

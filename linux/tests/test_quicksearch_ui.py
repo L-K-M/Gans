@@ -150,6 +150,8 @@ class QuickSearchUITests(unittest.TestCase):
     def _dispose(self):
         if self.controller is None:
             return
+        for menu in self.popup_menus():  # a context menu left up would grab the next test
+            menu.popdown()
         self.controller.hide(restore_focus=False)
         if self.controller.window is not None:
             self.controller.window.destroy()
@@ -180,13 +182,26 @@ class QuickSearchUITests(unittest.TestCase):
     def key(self, *keys):
         self.xdotool("key", *keys)
 
-    def click(self, x, y):
+    def click(self, x, y, button=1):
         """A real pointer click at window-relative (x, y): the pointer is moved relative
         to the window, then pressed via XTest (a ``click --window`` XSendEvent never
         reaches the list's own event window)."""
         self.xdotool("mousemove", str(x), str(y))
-        subprocess.run(["xdotool", "click", "1"], check=True, timeout=10)
+        subprocess.run(["xdotool", "click", str(button)], check=True, timeout=10)
         pump(150)
+
+    @staticmethod
+    def popup_menus():
+        """The ``Gtk.Menu``s currently popped up (each lives in its own POPUP_MENU
+        toplevel), e.g. the entry's right-click context menu."""
+        from gi.repository import Gdk, Gtk
+        menus = []
+        for toplevel in Gtk.Window.list_toplevels():
+            if toplevel.get_type_hint() == Gdk.WindowTypeHint.POPUP_MENU and toplevel.get_mapped():
+                child = toplevel.get_child()
+                if isinstance(child, Gtk.Menu):
+                    menus.append(child)
+        return menus
 
     def by_id(self, entry_id):
         return next(entry for entry in self.entries if entry.id == entry_id)
@@ -402,17 +417,27 @@ class QuickSearchUITests(unittest.TestCase):
         self.assertFalse(self.controller.is_visible)
 
     def test_commit_near_expiry_waits_for_a_fresh_code(self):
-        with patch("gans.otp._now", return_value=EXPIRING_TIME), patch("gans.entry._now", return_value=EXPIRING_TIME):
+        """With ≤2 s left on a TOTP, commit waits for the next window and delivers the
+        code computed *then* — not the one showing when Return was pressed. The clock is
+        advanced during the wait so a stale, eagerly captured code would be caught."""
+        clock = {"now": EXPIRING_TIME}
+        with patch("gans.otp._now", side_effect=lambda: clock["now"]), \
+                patch("gans.entry._now", side_effect=lambda: clock["now"]):
             self.show()
-            self.assertEqual(self.by_id("aws").seconds_remaining(), 1)
+            aws = self.by_id("aws")
+            self.assertEqual(aws.seconds_remaining(), 1)
+            stale = aws.code()
             started = time.monotonic()
             self.key("Return")
             self.assertFalse(self.controller.is_visible)
             self.assertEqual(self.app.toast.shows, [("Waiting for a fresh code…", 1.6, None, None)])
             self.assertEqual(self.injector.deliveries, [])
+            clock["now"] = EXPIRING_TIME + 2  # the next window arrives while we wait
+            fresh = aws.code()
+            self.assertNotEqual(fresh, stale)
             self.assertTrue(wait_until(lambda: self.injector.deliveries, timeout=4))
             self.assertGreaterEqual(time.monotonic() - started, 1.0)
-            self.assertEqual(self.injector.deliveries[0][0], self.by_id("aws").code())
+        self.assertEqual([item[0] for item in self.injector.deliveries], [fresh])
 
     def test_hotp_commits_immediately(self):
         with patch("gans.otp._now", return_value=EXPIRING_TIME):
@@ -467,6 +492,50 @@ class QuickSearchUITests(unittest.TestCase):
         self.assertEqual(self.model.selected_id, "s11")
         self.assertTrue(wait_until(lambda: adjustment.get_value() > 0), "the selected row wasn't scrolled into view")
 
+    def test_wheel_scrolling_survives_the_tick(self):
+        """The 4 Hz tick re-renders the rows; only a selection change may scroll the list
+        (the macOS ``onChange(of: selectedID)``), so a list the user scrolled by hand
+        stays put — otherwise rows past the first page could never be reached by mouse."""
+        self.entries = [AuthEntry.parse(f"otpauth://totp/Site{index:02d}:me?secret={SECRET}&issuer=Site{index:02d}",
+                                        f"s{index}") for index in range(12)]
+        window = self.show()
+        adjustment = window.list_adjustment
+        self.assertTrue(wait_until(lambda: adjustment.get_upper() > adjustment.get_page_size()))
+        bottom = adjustment.get_upper() - adjustment.get_page_size()
+        adjustment.set_value(bottom)  # what wheeling down to the last rows does
+        first = self.model.tick
+        self.assertTrue(wait_until(lambda: self.model.tick > first, timeout=2))
+        pump(600)  # a couple more ticks
+        self.assertEqual(adjustment.get_value(), bottom)
+        self.assertEqual(self.model.selected_id, "s0")
+        self.key("Down")  # a selection change still brings the highlight into view
+        self.assertEqual(self.model.selected_id, "s1")
+        self.assertTrue(wait_until(lambda: adjustment.get_value() == 0.0), adjustment.get_value())
+        # Re-opening re-centres the selection rather than reviving the old scroll offset.
+        adjustment.set_value(bottom)
+        self.controller.hide()
+        self.show()
+        self.assertTrue(wait_until(lambda: adjustment.get_value() == 0.0), adjustment.get_value())
+
+    def test_entry_context_menu_does_not_dismiss(self):
+        """Right-clicking the search entry pops GTK's Cut/Copy/Paste menu, whose keyboard
+        grab the X server reports as a focus-out of the toplevel. The panel must stay up
+        (users right-click to paste a query), and closing the menu leaves it focused."""
+        self.build_controller(FakeX11(active=TARGET_WINDOW, name="Firefox"))
+        window = self.show()
+        pump(400)  # past the grace period for spurious focus-out events while mapping
+        metrics = self.Metrics
+        self.click(metrics.WIDTH // 2, metrics.SEARCH_FIELD_HEIGHT // 2, button=3)
+        self.assertTrue(wait_until(lambda: self.popup_menus()), "no context menu popped up")
+        pump(300)
+        self.assertTrue(self.controller.is_visible)
+        self.key("Escape")  # goes to the menu (it holds the grab), not to the panel
+        self.assertTrue(wait_until(lambda: not self.popup_menus()), "the context menu stayed up")
+        pump(300)
+        self.assertTrue(self.controller.is_visible)
+        self.assertTrue(wait_until(lambda: window.entry.has_focus()), "focus didn't return to the entry")
+        self.assertEqual(self.x11.activated, [])
+
     def test_focus_out_hides_without_restoring_focus(self):
         from gi.repository import Gtk
         self.build_controller(FakeX11(active=TARGET_WINDOW, name="Firefox"))
@@ -502,6 +571,40 @@ class QuickSearchUITests(unittest.TestCase):
         self.assertEqual(self.model.selected_id, "gh")
         self.assertEqual([row.auth_entry.id for row in window.rows], ["aws", "gh", "gg", "zed"])
         self.assertEqual(self.selected_rows(), ["gh"])
+
+    def test_rows_are_recycled_when_the_results_change(self):
+        """Narrowing and widening the results re-binds the existing row widgets (hiding
+        the surplus) instead of destroying and rebuilding them all, so a keystroke with a
+        large vault doesn't stall."""
+        window = self.show()
+        original = list(window.rows)
+        self.assertEqual(len(original), 4)
+        window.entry.set_text("g")
+        pump(50)
+        self.assertEqual(list(window.rows), original[:2])  # the same widgets, re-bound
+        self.assertEqual([row.auth_entry.id for row in window.rows], ["gh", "gg"])
+        self.assertEqual(self.selected_rows(), ["gh"])
+        for spare in original[2:]:
+            self.assertFalse(spare.get_visible())
+            self.assertIsNone(spare.auth_entry)
+        window.entry.set_text("")
+        pump(50)
+        self.assertEqual(list(window.rows), original)
+        self.assertTrue(all(row.get_visible() for row in original))
+        self.assertEqual([row.auth_entry.id for row in window.rows], ["aws", "bank", "gh", "gg"])
+        self.assertEqual(self.selected_rows(), ["aws"])
+        self.assertEqual(window.get_size(), (self.Metrics.WIDTH, self.Metrics.panel_height(4)))
+
+    def test_reshowing_renders_once(self):
+        """``show()`` sets several model properties in a row; while the window is hidden
+        those notifications are coalesced into the single render made before mapping."""
+        window = self.show()
+        self.controller.hide()
+        Row = type(window.rows[0])
+        with patch.object(Row, "update", autospec=True, side_effect=Row.update) as update:
+            self.show()
+        self.assertEqual(update.call_count, 4)  # one render: each of the 4 rows bound once
+        self.assertEqual([row.auth_entry.id for row in window.rows], ["aws", "bank", "gh", "gg"])
 
 
 @unittest.skipUnless(gtk_available(), "needs GTK")

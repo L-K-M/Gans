@@ -221,8 +221,9 @@ class EntityCache(path=None): load() -> Snapshot(entities, since_time) ; save(sn
 @dataclass GitHubRelease(tag_name, name, body, html_url, prerelease, draft, published_at) ; release_notes(max_length=600)
 class GitHubReleaseClient(owner, repo): latest_release(include_prereleases) -> GitHubRelease
 # updates/checker.py
-class UpdateChecker(configuration: Configuration, prefs_path=None, dispatch=…):
+class UpdateChecker(configuration: Configuration, prefs: Preferences, dispatch, client=None):   # client: a GitHubReleaseClient stand-in
   start() ; check_in_background() ; check_now() ; automatic_checks_enabled ; last_check_date ; is_checking ; on_change(cb)
+  # is_checking holds until the outcome dialog closes (the macOS alert is modal), so a repeat check raises it rather than stacking one
 ```
 
 ### 4.4 Platform

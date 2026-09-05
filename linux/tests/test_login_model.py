@@ -181,6 +181,28 @@ class LoginViewModelTests(unittest.TestCase):
         self.settle()
         self.assertEqual(self.login.calls[-1], ("verify_2fa", "sess-2fa", "654321"))
 
+    def test_signing_in_from_a_code_stage_resets_to_credentials(self):
+        # The model outlives the session (the window is hidden, not destroyed), so a
+        # later sign-in must start over rather than on the previous login's dead 2FA
+        # session; the email stays for convenience, the password and code are dropped.
+        self.login.srp = NeedsTwoFactor("sess-2fa")
+        self.model.sign_in_with_password()
+        self.settle()
+        self.model.code = "654321"
+        self.model.submit_code()
+        self.assertTrue(wait_for(lambda: self.signed_in == 1))
+        self.settle()
+        self.assertEqual(self.model.stage, Stage.credentials())
+        self.assertEqual(self.model.code, "")
+        self.assertEqual(self.model.password, "")
+        self.assertEqual(self.model.email, "  alice@example.com ")
+        self.assertIsNone(self.model.error_message)
+        # A second sign-in goes through the credentials flow again, not the old session.
+        self.model.password = "hunter2"
+        self.model.sign_in_with_password()
+        self.settle()
+        self.assertEqual(self.login.calls[-1], ("srp", "alice@example.com", "hunter2"))
+
     def test_submit_code_outside_a_code_stage_does_nothing(self):
         self.model.code = "123456"
         self.model.submit_code()

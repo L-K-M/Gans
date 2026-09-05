@@ -12,6 +12,7 @@ from tests.gtkbind import gtk_session
 
 from gans.ente.login import Authorized, LoginError, NeedsEmailCode, NeedsPasskey, NeedsTwoFactor
 from gans.ente.models import AuthorizationResponse
+from gans.ui.login_model import Stage
 
 AUTH = AuthorizationResponse(id=1, encrypted_token="tok")
 
@@ -225,6 +226,30 @@ class LoginUITests(unittest.TestCase):
         window.continue_button.clicked()
         self.assertTrue(wait_until(lambda: self.app.presented == 1))
         self.assertEqual(self.login.calls[-1], ("verify_2fa", "sess-2fa", "654321"))
+
+    def test_reshowing_after_a_two_factor_sign_in_starts_on_credentials(self):
+        # Sign Out -> "Sign in to Ente..." re-presents the retained window; it must not
+        # come back on the code page with the previous login's dead 2FA session.
+        self.login.srp = NeedsTwoFactor("sess-2fa")
+        window = self.show()
+        self.fill_credentials(window)
+        window.sign_in_button.clicked()
+        self.wait_for_page("code")
+        window.code_entry.set_text("654321")
+        pump(20)
+        window.continue_button.clicked()
+        self.assertTrue(wait_until(lambda: self.app.presented == 1))
+        self.assertTrue(wait_until(lambda: not window.get_visible()))
+        self.controller.show()
+        self.assertTrue(wait_until(window.get_visible))
+        pump(50)
+        self.assertEqual(window.visible_page, "credentials")
+        self.assertEqual(self.model.stage, Stage.credentials())
+        self.assertEqual(window.email_entry.get_text(), "alice@example.com")
+        self.assertEqual(window.password_entry.get_text(), "")
+        self.assertEqual(window.code_entry.get_text(), "")
+        self.assertIsNone(window.error_text)
+        self.assertIs(window.get_focus(), window.password_entry)
 
     def test_srp_unavailable_falls_back_to_the_email_code_page(self):
         self.login.srp = LoginError(LoginError.SRP_UNAVAILABLE)

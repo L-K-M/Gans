@@ -59,6 +59,8 @@ class EnteVault:
         self._observers: List[Callable[[], None]] = []
         self._refresh_lock = threading.Lock()
         self._refresh_done: Optional[threading.Event] = None
+        #: Serializes persisting a login against swapping the keyring (``adopt_keyring``).
+        self._keyring_lock = threading.Lock()
 
         self.entries: List[AuthEntry] = []
         self.state: VaultState = VaultState.SIGNED_OUT
@@ -95,9 +97,40 @@ class EnteVault:
     def adopt_keyring(self, keyring: Keyring) -> None:
         """Swaps in the real keyring once it has been opened. Opening the Secret Service
         can block on a desktop prompt (unlock / create keyring), so the app resolves it on
-        a worker thread and hands it over here before restoring the session."""
-        self._keyring = keyring
+        a worker thread and hands it over here before restoring the session.
+
+        A login completed meanwhile lives in the interim (memory) keyring and is the
+        freshest session there is: it moves into the adopted keyring rather than being
+        thrown away. Should the adopted keyring refuse the writes, the interim one stays
+        in use (memory-only, which the UI flags) instead of losing the session."""
+        with self._keyring_lock:
+            interim = self._keyring
+            adopted = interim is keyring or not self._has_session(interim) or self._copy_session(interim, keyring)
+            if adopted:
+                self._keyring = keyring
+        if not adopted:
+            log.ente.warning("Couldn't move the session into the keyring; keeping it in memory")
         self._notify()
+
+    @staticmethod
+    def _has_session(keyring: Keyring) -> bool:
+        return keyring.get(_Keys.token) is not None and keyring.get(_Keys.auth_key) is not None
+
+    @staticmethod
+    def _copy_session(source: Keyring, target: Keyring) -> bool:
+        """Copies the session items into ``target``; on a failed write, rolls back what
+        was written so ``target`` never holds half a session."""
+        written: List[str] = []
+        for key in (_Keys.token, _Keys.auth_key, _Keys.email):
+            value = source.get(key)
+            if value is None:
+                continue
+            if not target.set(key, value):
+                for stale in written:
+                    target.remove(stale)
+                return False
+            written.append(key)
+        return True
 
     @property
     def keyring_persistent(self) -> bool:
@@ -105,7 +138,7 @@ class EnteVault:
 
     @property
     def is_signed_in(self) -> bool:
-        return self._keyring.get(_Keys.token) is not None and self._keyring.get(_Keys.auth_key) is not None
+        return self._has_session(self._keyring)
 
     # MARK: Session restore
 
@@ -115,6 +148,14 @@ class EnteVault:
         token = self._keyring.get(_Keys.token)
         auth_key = self._keyring.get(_Keys.auth_key)
         if token is None or auth_key is None:
+            # No session (or one that vanished from the keyring): the in-memory state has
+            # to agree, so entries and the key of an earlier session must not linger.
+            self._auth_key = None
+            self.account_email = None
+            self.entries = []
+            self.last_sync = None
+            self.session_expired = False
+            self._api.set_auth_token(None)
             self._set_state(VaultState.SIGNED_OUT)
             return
         self._api.set_auth_token(token.decode("utf-8", "replace"))
@@ -154,9 +195,11 @@ class EnteVault:
             unwrapped_auth_key = crypto.secret_box_open(encrypted, nonce, keys.master_key)
 
             # Persist (token + authKey + email). Password is intentionally never stored.
-            self._keyring.set(_Keys.token, keys.token.encode("utf-8"))
-            self._keyring.set(_Keys.auth_key, unwrapped_auth_key)
-            self._keyring.set(_Keys.email, email.encode("utf-8"))
+            # Under the lock so a keyring adopted mid-way can't miss half of it.
+            with self._keyring_lock:
+                self._keyring.set(_Keys.token, keys.token.encode("utf-8"))
+                self._keyring.set(_Keys.auth_key, unwrapped_auth_key)
+                self._keyring.set(_Keys.email, email.encode("utf-8"))
 
             self._auth_key = unwrapped_auth_key
             self.account_email = email

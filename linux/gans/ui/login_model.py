@@ -235,6 +235,11 @@ class LoginViewModel:
             # session that completed after a late Cancel still counts: the vault is
             # signed in, so the window must close either way.
             self.password = ""
+            # Back to the credentials page: the controller keeps this model (and its
+            # window) across hide/show, so after Sign Out -> "Sign in to Ente..." the
+            # window must not re-open on the 2FA/email-code page of a dead session.
+            self.code = ""
+            self.stage = Stage.credentials()
             self.error_message = None
             self._clear_busy(task)
             self._notify()

@@ -275,9 +275,15 @@ class QuickSearchWindow(Gtk.Window):
         install_css()
         self._model = model
         self._on_commit = on_commit
+        #: A pool of row widgets: the first ``len(_row_ids)`` are bound to the current
+        #: results, the rest are hidden spares (rows are recycled, never rebuilt).
         self._rows: List[_ResultRow] = []
         self._row_ids: List[str] = []
         self._pending_scroll: Optional[float] = None
+        #: The selection last scrolled into view; the list only scrolls when this changes.
+        self._scrolled_to: Optional[str] = None
+        #: A model change arrived while hidden; ``render()`` runs on the next show.
+        self._stale = False
         self._applied_geometry: Optional[Tuple[int, Optional[Anchor]]] = None
         #: Screen position of the top-left corner, fixed while the window is up — the
         #: window is pinned by its TOP edge and horizontal centre so the search field
@@ -305,7 +311,8 @@ class QuickSearchWindow(Gtk.Window):
             style.add_class("gans-square")
 
         self._build()
-        self._model.on_change(self.render)
+        self._model.on_change(self._on_model_changed)
+        self.connect("show", self._on_show)
 
     # MARK: Construction
 
@@ -392,7 +399,8 @@ class QuickSearchWindow(Gtk.Window):
 
     @property
     def rows(self) -> Sequence[_ResultRow]:
-        return tuple(self._rows)
+        """The rows bound to the current results, in order (hidden spares excluded)."""
+        return tuple(self._rows[:len(self._row_ids)])
 
     @property
     def empty_text(self) -> Optional[str]:
@@ -413,16 +421,32 @@ class QuickSearchWindow(Gtk.Window):
 
     # MARK: Rendering
 
+    def _on_model_changed(self) -> None:
+        """Model notifications re-render at once while the window is up. While it's
+        hidden they're coalesced: ``show()`` sets several model properties in a row, and
+        one render before mapping is enough."""
+        if self.get_visible():
+            self.render()
+        else:
+            self._stale = True
+
+    def _on_show(self, _window: Gtk.Widget) -> None:
+        if self._stale:
+            self.render()
+
     def render(self) -> None:
-        """Re-renders from the model. Rows are rebuilt only when the set/order of result
-        ids changes; otherwise labels and the selection are updated in place, so typing
-        stays smooth and the tick doesn't churn widgets."""
+        """Re-renders from the model. Row widgets are pooled: when the set/order of
+        result ids changes the pool is re-bound in place (grown only when the list gets
+        longer than ever before, surplus rows hidden), otherwise labels and the selection
+        are updated in place — so typing never churns widgets and the tick is cheap."""
+        self._stale = False
         model = self._model
         results = model.results
         ids = [entry.id for entry in results]
         if ids != self._row_ids:
-            self._rebuild_rows(len(results))
+            self._bind_rows(len(results))
             self._row_ids = ids
+            self._scrolled_to = None  # the rows under the selection moved: re-centre it
         for index, (row, entry) in enumerate(zip(self._rows, results)):
             row.update(entry, index, model)
 
@@ -444,17 +468,22 @@ class QuickSearchWindow(Gtk.Window):
             self._empty.set_visible(True)
         self.relayout()
 
-    def _rebuild_rows(self, count: int) -> None:
-        for row in self._rows:
-            self._list.remove(row)
-            row.destroy()
-        self._rows = []
-        for index in range(count):
+    def _bind_rows(self, count: int) -> None:
+        """Sizes the pool to ``count`` visible rows. Rows are created only when the list
+        outgrows the pool and hidden (not destroyed) when it shrinks, so a keystroke that
+        narrows or widens the results costs a rebind, not a rebuild of every row."""
+        while len(self._rows) < count:
             row = _ResultRow()
-            if index > 0:
+            if self._rows:
                 row.set_margin_top(Metrics.ROW_SPACING)
             self._list.add(row)
             self._rows.append(row)
+        for index, row in enumerate(self._rows):
+            if index < count:
+                row.set_visible(True)
+            elif row.get_visible():
+                row.set_visible(False)
+                row.auth_entry = None  # a hidden spare holds no entry
         self._scroller.set_size_request(-1, Metrics.list_height(count))
 
     def _update_footer(self) -> None:
@@ -472,15 +501,23 @@ class QuickSearchWindow(Gtk.Window):
         self._peek_hint.set_visible(not model.show_codes)
 
     def _scroll_to_selected(self) -> None:
-        """Keeps the highlighted row in view (centred, like ``scrollTo(anchor: .center)``).
+        """Keeps the highlighted row in view (centred, like ``scrollTo(anchor: .center)``)
+        — but only when the selection changes (or the rows under it were re-bound), as the
+        macOS ``onChange(of: selectedID)`` does. Every other render, the 4 Hz tick above
+        all, leaves the list where the user's wheel put it.
+
         The geometry is known from the metrics, so no allocation round-trip is needed;
         the value is re-applied once the adjustment learns its new range."""
-        rows = len(self._rows)
+        selected = self._model.selected_id
+        if selected == self._scrolled_to:
+            return
+        self._scrolled_to = selected
+        self._pending_scroll = None
+        rows = len(self._row_ids)
         viewport = Metrics.list_height(rows)
         content = rows * Metrics.ROW_HEIGHT + max(rows - 1, 0) * Metrics.ROW_SPACING + Metrics.LIST_PADDING * 2
         if content <= viewport:
             return
-        selected = self._model.selected_id
         index = next((position for position, row_id in enumerate(self._row_ids) if row_id == selected), None)
         if index is None:
             return
@@ -488,7 +525,6 @@ class QuickSearchWindow(Gtk.Window):
         target = max(0.0, min(centre - viewport / 2, content - viewport))
         adjustment = self._scroller.get_vadjustment()
         if adjustment.get_upper() - adjustment.get_page_size() >= target:
-            self._pending_scroll = None
             adjustment.set_value(target)
         else:
             self._pending_scroll = target
@@ -516,8 +552,11 @@ class QuickSearchWindow(Gtk.Window):
 
     def forget_geometry(self) -> None:
         """Forces the next ``relayout`` to re-apply size and position (called on show,
-        since the WM may have moved a hidden window's remembered position)."""
+        since the WM may have moved a hidden window's remembered position) and the next
+        render to scroll the selection back into view (the list may have been left
+        scrolled elsewhere when the window was dismissed)."""
         self._applied_geometry = None
+        self._scrolled_to = None
 
     # MARK: Signals
 
@@ -527,6 +566,17 @@ class QuickSearchWindow(Gtk.Window):
     def _on_row_activated(self, _list: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         if isinstance(row, _ResultRow) and row.auth_entry is not None:
             self._on_commit(row.auth_entry)
+
+
+def _own_popup_holds_focus() -> bool:
+    """Whether a widget of this process holds a grab — a ``Gtk.Menu`` popped up from our
+    window (``gtk_grab_add`` plus a GDK keyboard grab), which is where the focus went."""
+    if Gtk.grab_get_current() is not None:
+        return True
+    display = Gdk.Display.get_default()
+    seat = display.get_default_seat() if display is not None else None
+    keyboard = seat.get_keyboard() if seat is not None else None
+    return keyboard is not None and display.device_is_grabbed(keyboard)
 
 
 # MARK: Controller
@@ -719,8 +769,15 @@ class QuickSearchController:
 
     def _on_focus_out(self, _window: Gtk.Window, _event: Gdk.EventFocus) -> bool:
         """Dismiss like Spotlight when focus leaves the window (click another window).
-        No focus restore — the user just chose somewhere else to be."""
+        No focus restore — the user just chose somewhere else to be.
+
+        Not when the "focus loss" is one of our own popups: the entry's context menu
+        (right-click → Cut/Copy/Paste) takes a keyboard grab, which the X server reports
+        as FocusOut(NotifyGrab) and GDK relays as a focus-out of the toplevel. Focus comes
+        straight back when the menu closes, so there's nothing to dismiss."""
         if not self.is_visible or time.monotonic() - self._shown_at < _FOCUS_OUT_GRACE:
+            return False
+        if _own_popup_holds_focus():
             return False
         self.hide(restore_focus=False)
         return False
