@@ -315,7 +315,9 @@ class X11Session:
         """Types ``text`` into whatever has focus, layout-independently: every character is
         resolved against the live keyboard mapping (with the Shift / AltGr key held as
         needed) and characters the layout can't produce are bound to an unused keycode
-        for the duration of one keystroke. Returns False — having typed nothing — when a
+        for the duration of one keystroke. Modifier keys the user still holds (the Ctrl of
+        the Ctrl+3 that committed Quick Search) are released first so they don't combine
+        with the keystrokes. Returns False — normally before anything was typed — when a
         character can't be produced or the server is unreachable."""
         with self._lock:
             display = self._connect()
@@ -346,6 +348,7 @@ class X11Session:
                 if not control or not v_key:
                     log.paste.warning("This keyboard mapping has no Control or V key; can't paste")
                     return False
+                self._release_held_modifiers(display)  # Ctrl+Shift+V isn't paste
                 self._key(display, X.KeyPress, control)
                 self._tap(display, v_key)
                 self._key(display, X.KeyRelease, control)
@@ -387,7 +390,12 @@ class X11Session:
             scratch = keymap.free_keycode()
             if scratch is None:
                 raise _Untypeable("no unused keycode to remap for a symbol the layout lacks")
+        shift = self._modifier_keys(keymap, 1)
 
+        # Whatever the user still holds from the chord that committed Quick Search (the
+        # Ctrl of Ctrl+3, the Shift of Shift+Return) would combine with every key below —
+        # the target would get Ctrl+1, '!' or nothing — so let go of it first.
+        self._release_held_modifiers(display)
         # Caps Lock inverts every letter we'd type (Steam codes!) and even the scratch
         # key, so toggle it off for the duration and restore it afterwards.
         caps_lock = 0
@@ -398,7 +406,7 @@ class X11Session:
         try:
             for step in steps:
                 if step.keycode is None:
-                    self._type_via_scratch(display, scratch, step.keysym)
+                    self._type_via_scratch(display, scratch, step.keysym, shift)
                     continue
                 for modifier in step.modifiers:
                     self._key(display, X.KeyPress, modifier)
@@ -409,19 +417,60 @@ class X11Session:
             if caps_lock:
                 self._tap(display, caps_lock)
 
-    def _type_via_scratch(self, display: xdisplay.Display, scratch: int, keysym: int) -> None:
+    def _type_via_scratch(self, display: xdisplay.Display, scratch: int, keysym: int,
+                          shift: Optional[Tuple[int, ...]]) -> None:
         """Binds ``keysym`` to the unused ``scratch`` keycode, presses it, and unbinds it
-        again — exactly what xdotool does for symbols the layout lacks."""
-        display.change_keyboard_mapping(scratch, [[keysym]])
+        again — xdotool's trick for symbols the layout lacks.
+
+        The keysym is bound at both Shift levels. Given a *lone* cased keysym, the server's
+        core-to-XKB conversion makes the key alphabetic with the lowercase form at level 1
+        (``N`` alone becomes ``n`` / Shift+``N``), so an unshifted tap would type the wrong
+        case — every letter of a Steam code on a Cyrillic or Greek layout, and on a
+        ``us,ru`` setup even with Latin active. The server has the last word on the
+        conversion, so the row is read back and, should the symbol have landed on the
+        Shift level after all, ``shift`` (the Shift keycode(s), None if the layout has
+        none) is held for the tap."""
+        display.change_keyboard_mapping(scratch, [[keysym, keysym]])
         display.sync()
         time.sleep(_REMAP_DELAY)
         try:
+            row = display.get_keyboard_mapping(scratch, 1)[0]
+            if row and row[0] == keysym:
+                modifiers: Tuple[int, ...] = ()
+            elif len(row) > 1 and row[1] == keysym and shift is not None:
+                modifiers = shift
+            else:
+                raise _Untypeable("the server didn't bind the symbol to the scratch keycode as requested")
+            for modifier in modifiers:
+                self._key(display, X.KeyPress, modifier)
             self._tap(display, scratch)
+            for modifier in reversed(modifiers):
+                self._key(display, X.KeyRelease, modifier)
             display.sync()
             time.sleep(_REMAP_SETTLE)
         finally:
             display.change_keyboard_mapping(scratch, [[X.NoSymbol]])
             display.sync()
+
+    def _release_held_modifiers(self, display: xdisplay.Display) -> None:
+        """Releases every modifier key that is physically down — what xdotool's
+        ``--clearmodifiers`` does. Quick Search commits on Ctrl+1…9 and Shift/Alt+Return,
+        and the code is typed some 120 ms later, well before the user has let go; the
+        server would apply the held modifiers to the synthesized keys just as to real ones.
+        A key is "held" when its bit is set in the server's key-down vector and it belongs
+        to the modifier map (lock keys — Caps Lock, Num Lock — aren't down once tapped, so
+        their state is left alone here).
+
+        Unlike xdotool the keys are not pressed again afterwards: had the user let go in
+        the meantime, a re-press would leave the modifier stuck until the next tap of it,
+        whereas the user's own release arriving after ours is simply ignored."""
+        down = display.query_keymap()  # 32 bytes, one bit per keycode
+        held = [keycode for keycodes in display.get_modifier_mapping() for keycode in keycodes
+                if keycode and down[keycode >> 3] & (1 << (keycode & 7))]
+        if held:
+            log.paste.debug("Releasing %d modifier key(s) still held before typing", len(held))
+        for keycode in held:
+            self._key(display, X.KeyRelease, keycode)
 
     @staticmethod
     def _key(display: xdisplay.Display, event_type: int, keycode: int) -> None:
@@ -500,7 +549,9 @@ class X11HotkeyGrabber:
     connection, grabs on it, and hands it to a daemon thread that selects on the
     connection plus a wake-up pipe; ``unregister`` pokes the pipe, joins the thread,
     ungrabs and closes. Matching presses are handed to ``dispatch(on_pressed)`` so the
-    callback runs on the main loop."""
+    callback runs on the main loop — once per physical press, like Carbon's
+    ``kEventHotKeyPressed``: the server's auto-repeat, which a grabbing client sees as
+    KeyRelease + KeyPress pairs stamped with one and the same time, is filtered out."""
 
     def __init__(self, x11: X11Session, dispatch: Callable[[Callable[[], None]], object]):
         self._x11 = x11
@@ -590,6 +641,9 @@ class X11HotkeyGrabber:
              match: Tuple[int, int, int], on_pressed: Callable[[], None]) -> None:
         keycode, modifiers, ignored = match
         display_fd = display.fileno()
+        # A KeyPress carrying the time of the last KeyRelease of the same key is an
+        # auto-repeat, not a new press (X generates the pair with a single timestamp).
+        last_release: Optional[int] = None
         try:
             while True:
                 readable, _, _ = select.select([display_fd, wake_fd], [], [])
@@ -597,8 +651,11 @@ class X11HotkeyGrabber:
                     return
                 while display.pending_events():
                     event = display.next_event()
-                    if (event.type == X.KeyPress and event.detail == keycode
-                            and (event.state & _MODIFIER_MASK & ~ignored) == modifiers):
+                    if event.type not in (X.KeyPress, X.KeyRelease) or event.detail != keycode:
+                        continue
+                    if event.type == X.KeyRelease:
+                        last_release = event.time
+                    elif event.time != last_release and (event.state & _MODIFIER_MASK & ~ignored) == modifiers:
                         self._dispatch(on_pressed)
         except (xerror.XError, xerror.ConnectionClosedError, OSError, ValueError) as error:
             log.hotkey.warning("X11 hotkey listener for %s stopped: %s", spec.display_string, error)

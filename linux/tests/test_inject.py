@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 import time
 import unittest
 
@@ -182,6 +184,30 @@ class CodeInjectorXvfbTests(unittest.TestCase):
         self.assertTrue(wait_until(lambda: self.entry.get_text() == "123456"))
         self.assertEqual(self.results, [DeliveryResult.DELIVERED])
         self.assertEqual(self.clipboard_text(), "whatever was there")  # typing leaves the clipboard alone
+
+    def test_types_while_the_commit_chord_is_still_held(self):
+        # Quick Search commits on Ctrl+3 and the code is typed ACTIVATION_DELAY_MS later —
+        # usually before the user has let go of Ctrl, which must not turn the digits into
+        # Ctrl+1…6 (a silently lost code, or switched browser tabs).
+        from gi.repository import GLib
+        if shutil.which("xdotool") is None:
+            self.skipTest("xdotool not installed")
+
+        def let_go_of_ctrl():
+            subprocess.run(["xdotool", "keyup", "ctrl"], check=True)
+            return False
+
+        subprocess.run(["xdotool", "keydown", "ctrl"], check=True)
+        pump(30)
+        try:
+            result = self.injector.deliver("123456", self.target, DeliveryMode.TYPE, also_copy=False,
+                                           completion=self.results.append)
+            self.assertIs(result, DeliveryResult.DELIVERED)
+            GLib.timeout_add(250, let_go_of_ctrl)
+            self.assertTrue(wait_until(lambda: self.entry.get_text() == "123456"), self.entry.get_text())
+            self.assertEqual(self.results, [DeliveryResult.DELIVERED])
+        finally:
+            subprocess.run(["xdotool", "keyup", "ctrl"], check=True)
 
     def test_pastes_into_the_target(self):
         result = self.injector.deliver("654321", self.target, DeliveryMode.PASTE, also_copy=False,

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import shutil
 import subprocess
@@ -11,6 +12,35 @@ from tests.gtkbind import gtk_session, present_now
 
 from gans.hotkeyspec import HotkeySpec
 from gans.platform.x11 import X11HotkeyGrabber, X11Session
+
+
+@contextlib.contextmanager
+def keyboard_layout(layout):
+    """Switches the shared server's keyboard layout for the block, back to ``us`` after."""
+    if shutil.which("setxkbmap") is None:
+        raise unittest.SkipTest("setxkbmap not installed")
+    subprocess.run(["setxkbmap", "-layout", layout], check=True)
+    try:
+        pump(100)
+        yield
+    finally:
+        subprocess.run(["setxkbmap", "-layout", "us"], check=True)
+        pump(100)
+
+
+@contextlib.contextmanager
+def keys_held(combination):
+    """Holds ``combination`` (xdotool syntax) down for the block, like a user who hasn't let
+    go of the chord yet."""
+    if shutil.which("xdotool") is None:
+        raise unittest.SkipTest("xdotool not installed")
+    subprocess.run(["xdotool", "keydown", combination], check=True)
+    pump(50)
+    try:
+        yield
+    finally:
+        subprocess.run(["xdotool", "keyup", combination], check=True)
+        pump(50)
 
 
 class InertX11Tests(unittest.TestCase):
@@ -95,21 +125,61 @@ class X11SessionTests(unittest.TestCase):
         self.assertTrue(wait_until(lambda: self.entry.get_text() == "N7QKX"))
 
     def test_type_symbols_absent_from_layout_via_remap(self):
-        self.type_in_background("é1ü€Ω", "é1ü€Ω")
+        # É and Ü are cased: bound alone to the scratch key, the server would pair them
+        # with é/ü and put the capitals on the Shift level.
+        self.type_in_background("é1ü€ΩÉÜ", "é1ü€ΩÉÜ")
+
+    def test_type_steam_code_on_a_cyrillic_layout(self):
+        # Not one Latin letter on the layout: every letter goes through the scratch
+        # keycode, and Steam codes are uppercase.
+        with keyboard_layout("ru"):
+            self.type_in_background("N7QKX", "N7QKX")
+
+    def test_type_steam_code_on_a_dual_layout(self):
+        # us,ru has the Latin letters, but only in group 1 — and which group is active
+        # can't be known, so they take the scratch route as well.
+        with keyboard_layout("us,ru"):
+            self.type_in_background("N7QKX", "N7QKX")
 
     def test_type_altgr_symbols_on_german_layout(self):
-        if shutil.which("setxkbmap") is None:
-            self.skipTest("setxkbmap not installed")
-        subprocess.run(["setxkbmap", "-layout", "de"], check=True)
-        try:
-            pump(100)
+        with keyboard_layout("de"):
             # ü is a plain key, Ü needs Shift, @ and { live on AltGr — and the mapping is
             # read live, so the switch made after connecting is honoured.
             self.assertTrue(self.x11.type_text("ü@{Ü"))
             self.assertTrue(wait_until(lambda: self.entry.get_text() == "ü@{Ü"), self.entry.get_text())
+
+    def test_type_releases_modifiers_the_user_still_holds(self):
+        from Xlib import X
+        import Xlib.display
+        probe = Xlib.display.Display()
+        chord_bits = X.ShiftMask | X.ControlMask | X.Mod1Mask | X.Mod4Mask
+        try:
+            root = probe.screen().root
+            # Quick Search commits on Ctrl+1…9 / Shift+Return while the chord is still
+            # down; typed through it the digits would become Ctrl+1, '!' or nothing.
+            for held in ("ctrl", "shift", "alt", "super"):
+                self.entry.set_text("")
+                with keys_held(held):
+                    probe.sync()
+                    self.assertTrue(root.query_pointer().mask & chord_bits, f"{held} isn't down")
+                    self.assertTrue(self.x11.type_text("123456"))
+                    self.assertTrue(wait_until(lambda: self.entry.get_text() == "123456"),
+                                    f"holding {held}: {self.entry.get_text()!r}")
+                    probe.sync()
+                    self.assertFalse(root.query_pointer().mask & chord_bits, f"{held} still down after typing")
         finally:
-            subprocess.run(["setxkbmap", "-layout", "us"], check=True)
-            pump(100)
+            probe.close()
+
+    def test_send_ctrl_v_releases_a_held_shift(self):
+        from gans.platform.clipboard import Clipboard
+        clipboard = Clipboard()
+        try:
+            self.assertTrue(clipboard.copy("246810"))
+            with keys_held("shift"):  # Ctrl+Shift+V is not paste in a GTK entry
+                self.assertTrue(self.x11.send_ctrl_v())
+                self.assertTrue(wait_until(lambda: self.entry.get_text() == "246810"), self.entry.get_text())
+        finally:
+            clipboard.release()
 
     def test_type_with_caps_lock_on_restores_it(self):
         from Xlib import X, XK
@@ -265,6 +335,18 @@ class X11HotkeyGrabberTests(unittest.TestCase):
 
     def test_unknown_key_is_rejected(self):
         self.assertFalse(self.grabber.register(HotkeySpec(key="NoSuchKeysym", control=True), self.fired.set))
+
+    def test_holding_the_chord_fires_once(self):
+        dispatches = []
+        self.assertTrue(self.grabber.register(HotkeySpec.DEFAULT, lambda: dispatches.append(1)))
+        # Past the server's repeat delay (660 ms by default) auto-repeat streams
+        # release+press pairs at the grab; only the physical press may toggle the panel.
+        with keys_held("ctrl+alt+space"):
+            pump(1000)
+        pump(300)
+        self.assertEqual(len(dispatches), 1)
+        self.press("ctrl+alt+space")  # the next physical press is a new one
+        self.assertTrue(wait_until(lambda: len(dispatches) == 2, timeout=3))
 
     def test_dispatch_receives_the_callback(self):
         dispatched = []
