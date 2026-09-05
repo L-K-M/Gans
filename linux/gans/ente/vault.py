@@ -261,6 +261,9 @@ class EnteVault:
         coalesce into one network pass instead of racing the cache."""
         while True:
             with self._session_lock:
+                # A committed login must never coalesce with a skipped, pending-login pass.
+                if self._login_pending:
+                    return
                 generation = self._generation
             with self._refresh_lock:
                 in_flight = self._refresh_done

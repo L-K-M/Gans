@@ -530,6 +530,30 @@ class VaultTests(unittest.TestCase):
         self.assertEqual(self.cache.load().since_time, 100)
         self.assertIs(self.vault.state, VaultState.READY)
 
+    def test_refresh_during_login_does_not_register_a_pass(self):
+        self._login()
+        entered, release = threading.Event(), threading.Event()
+
+        def delayed_unwrap(*args):
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return unwrap(*args)
+
+        with patch("gans.ente.vault.unwrap", side_effect=delayed_unwrap):
+            worker = threading.Thread(target=self._login)
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                with patch.object(self.vault, "_perform_refresh", wraps=self.vault._perform_refresh) as perform:
+                    self.vault.refresh()
+                    perform.assert_not_called()
+            finally:
+                release.set()
+                worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertIs(self.vault.state, VaultState.READY)
+        self.assertEqual(len(self.vault.entries), 2)
+
     def test_concurrent_refreshes_coalesce(self):
         self._login()
         before = len(self.api.calls)
