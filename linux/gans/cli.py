@@ -25,10 +25,9 @@ COMMANDS = ("toggle", "search", "settings", "quit")
 
 
 def choose_gdk_backend() -> Optional[str]:
-    """Runs GDK on X11 (XWayland under Wayland) unless overridden: owning the clipboard
-    without focus, typing into other apps, and positioning the popup all need an X
-    server. ``GANS_GDK_BACKEND=wayland`` opts into native Wayland. Returns the backend
-    chosen (``None`` when there is nothing to override)."""
+    """Defaults GDK to X11 for tray clipboard ownership and popup placement.
+    ``GANS_GDK_BACKEND=wayland`` selects native Wayland; neither toolkit choice enables
+    automatic typing in Wayland sessions. Returns the backend chosen, or ``None``."""
     override = os.environ.get("GANS_GDK_BACKEND")
     if override:
         os.environ["GDK_BACKEND"] = override

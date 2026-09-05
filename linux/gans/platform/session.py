@@ -1,8 +1,8 @@
 """What kind of desktop session we're running in, read from the environment.
 
 The answers steer the platform layer: which hotkey backend to use (GNOME's custom
-keybindings vs. the portal vs. ``XGrabKey``), whether XTest typing can work at all
-(needs an X server — native or XWayland), and how to word the fallbacks. Everything here
+keybindings vs. the portal vs. ``XGrabKey``), whether native X11 typing is safe,
+and how to word clipboard-only fallbacks. Everything here
 is a pure function of ``os.environ`` so it's trivially unit-testable.
 """
 

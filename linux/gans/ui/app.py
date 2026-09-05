@@ -322,10 +322,10 @@ class GansApplication(Gtk.Application):
         status = self.hotkey.status
         if status is not None and status.ok:
             message = (f"Gans lives in your system tray. Press {self.prefs.hotkey.display_string} anywhere to "
-                       "search your 2FA codes and type them into whatever app you're in.")
+                       "search your 2FA codes.")
         else:
             message = ("Gans lives in your system tray. Bind a keyboard shortcut to “gans toggle” to search "
-                       "your 2FA codes from anywhere and type them into whatever app you're in.")
+                       "your 2FA codes from anywhere.")
 
         def show() -> bool:
             self.toast.show(message, duration=12, action_title="Try it", action=self.quick_search.show)

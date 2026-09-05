@@ -103,43 +103,54 @@ class AppLockTests(unittest.TestCase):
             self.assertFalse(self.authenticate(lock))
         self.assertTrue(lock.is_locked)
 
-    def test_missing_pkcheck_unlocks_with_a_warning(self):
+    def test_denial_and_dismissal_do_not_depend_on_english_output(self):
+        # pkcheck's exit status is authoritative, including localized or empty output.
+        for status in (1, 3):
+            for output in ("", "Nicht autorisiert", "Authentification annulée"):
+                with self.subTest(status=status, output=output), self.fake_pkcheck(
+                    f"printf '%s' '{output}' >&2; exit {status}"
+                ):
+                    lock = self.lock()
+                    self.assertFalse(self.authenticate(lock))
+                    self.assertTrue(lock.is_locked)
+
+    def test_missing_pkcheck_stays_locked_with_a_warning(self):
         with patch.dict(os.environ, {"GANS_PKCHECK": str(self.root / "missing" / "pkcheck")}):
             lock = self.lock()
             with self.assertLogs("gans.app", level="WARNING"):
-                self.assertTrue(self.authenticate(lock))
-        self.assertFalse(lock.is_locked)
+                self.assertFalse(self.authenticate(lock))
+        self.assertTrue(lock.is_locked)
 
-    def test_no_pkcheck_on_path_unlocks(self):
+    def test_no_pkcheck_on_path_stays_locked(self):
         with patch.dict(os.environ, {"GANS_PKCHECK": ""}), patch("gans.platform.applock.shutil.which", return_value=None):
             lock = self.lock()
             with self.assertLogs("gans.app", level="WARNING"):
-                self.assertTrue(self.authenticate(lock))
-        self.assertFalse(lock.is_locked)
+                self.assertFalse(self.authenticate(lock))
+        self.assertTrue(lock.is_locked)
 
-    def test_unregistered_action_unlocks(self):
+    def test_unregistered_action_stays_locked(self):
         body = ('echo "Error checking for authorization ch.lkmc.gans.unlock: '
                 'Action ch.lkmc.gans.unlock is not registered" >&2; exit 127')
         with self.fake_pkcheck(body):
             lock = self.lock()
             with self.assertLogs("gans.app", level="WARNING") as logs:
-                self.assertTrue(self.authenticate(lock))
+                self.assertFalse(self.authenticate(lock))
         self.assertIn("not registered", logs.output[0])
-        self.assertFalse(lock.is_locked)
+        self.assertTrue(lock.is_locked)
 
-    def test_no_authentication_agent_unlocks(self):
+    def test_no_authentication_agent_stays_locked(self):
         with self.fake_pkcheck('echo "Authorization requires authentication but no agent is available." >&2; exit 2'):
             lock = self.lock()
             with self.assertLogs("gans.app", level="WARNING"):
-                self.assertTrue(self.authenticate(lock))
-        self.assertFalse(lock.is_locked)
+                self.assertFalse(self.authenticate(lock))
+        self.assertTrue(lock.is_locked)
 
-    def test_crashing_pkcheck_unlocks(self):
+    def test_crashing_pkcheck_stays_locked(self):
         with self.fake_pkcheck("kill -SEGV $$"):
             lock = self.lock()
             with self.assertLogs("gans.app", level="WARNING"):
-                self.assertTrue(self.authenticate(lock))
-        self.assertFalse(lock.is_locked)
+                self.assertFalse(self.authenticate(lock))
+        self.assertTrue(lock.is_locked)
 
     def test_unanswered_prompt_stays_locked(self):
         with self.fake_pkcheck("sleep 5; exit 0"), patch.object(AppLock, "PROMPT_TIMEOUT", 0.3):
@@ -189,14 +200,13 @@ class AppLockTests(unittest.TestCase):
         self.assertEqual(classify(1, "Not authorized.\n"), (False, None))
         self.assertEqual(classify(1, "pkcheck: authorization failed"), (False, None))
         self.assertEqual(classify(3, "Authentication request was dismissed."), (False, None))
-        unlock, warning = classify(1, "pkcheck: unrecognized option")
-        self.assertTrue(unlock)
-        self.assertIn("exited 1", warning)
+        self.assertEqual(classify(1, ""), (False, None))
+        self.assertEqual(classify(3, ""), (False, None))
         unlock, warning = classify(126, "Error getting authority: Could not connect")
-        self.assertTrue(unlock)
+        self.assertFalse(unlock)
         self.assertIn("Could not connect", warning)
         unlock, warning = classify(-11, "")
-        self.assertTrue(unlock)
+        self.assertFalse(unlock)
         self.assertIn("no output", warning)
 
 

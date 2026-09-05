@@ -17,6 +17,7 @@ import json
 import threading
 import time
 from enum import Enum
+from http import HTTPStatus
 from typing import Callable, Dict, List, Optional
 
 from .. import b64, crypto, log
@@ -59,8 +60,12 @@ class EnteVault:
         self._observers: List[Callable[[], None]] = []
         self._refresh_lock = threading.Lock()
         self._refresh_done: Optional[threading.Event] = None
-        #: Serializes persisting a login against swapping the keyring (``adopt_keyring``).
-        self._keyring_lock = threading.Lock()
+        self._refresh_generation = 0
+        # Session changes invalidate worker results before they can publish or save.
+        self._session_lock = threading.RLock()
+        self._generation = 0
+        self._login_pending = False
+        self._login_lock = threading.Lock()
 
         self.entries: List[AuthEntry] = []
         self.state: VaultState = VaultState.SIGNED_OUT
@@ -103,7 +108,7 @@ class EnteVault:
         freshest session there is: it moves into the adopted keyring rather than being
         thrown away. Should the adopted keyring refuse the writes, the interim one stays
         in use (memory-only, which the UI flags) instead of losing the session."""
-        with self._keyring_lock:
+        with self._session_lock:
             interim = self._keyring
             adopted = interim is keyring or not self._has_session(interim) or self._copy_session(interim, keyring)
             if adopted:
@@ -120,16 +125,14 @@ class EnteVault:
     def _copy_session(source: Keyring, target: Keyring) -> bool:
         """Copies the session items into ``target``; on a failed write, rolls back what
         was written so ``target`` never holds half a session."""
-        written: List[str] = []
         for key in (_Keys.token, _Keys.auth_key, _Keys.email):
             value = source.get(key)
             if value is None:
                 continue
             if not target.set(key, value):
-                for stale in written:
+                for stale in (_Keys.token, _Keys.auth_key, _Keys.email):
                     target.remove(stale)
                 return False
-            written.append(key)
         return True
 
     @property
@@ -145,28 +148,30 @@ class EnteVault:
     def restore(self) -> None:
         """Restores a persisted session: load token + authKey, decrypt cached entities, then
         kick off a network refresh. Call once at launch."""
-        token = self._keyring.get(_Keys.token)
-        auth_key = self._keyring.get(_Keys.auth_key)
-        if token is None or auth_key is None:
-            # No session (or one that vanished from the keyring): the in-memory state has
-            # to agree, so entries and the key of an earlier session must not linger.
-            self._auth_key = None
-            self.account_email = None
-            self.entries = []
-            self.last_sync = None
-            self.session_expired = False
-            self._api.set_auth_token(None)
-            self._set_state(VaultState.SIGNED_OUT)
-            return
-        self._api.set_auth_token(token.decode("utf-8", "replace"))
-        self._auth_key = bytes(auth_key)
-        email = self._keyring.get(_Keys.email)
-        self.account_email = email.decode("utf-8", "replace") if email else None
+        with self._session_lock:
+            if self._login_pending:
+                return
+            self._generation += 1
+            token = self._keyring.get(_Keys.token)
+            auth_key = self._keyring.get(_Keys.auth_key)
+            if token is None or auth_key is None:
+                self._auth_key = None
+                self.account_email = None
+                self.entries = []
+                self.last_sync = None
+                self.session_expired = False
+                self._api.set_auth_token(None)
+                self._set_state(VaultState.SIGNED_OUT)
+                return
+            self._api.set_auth_token(token.decode("utf-8", "replace"))
+            self._auth_key = bytes(auth_key)
+            email = self._keyring.get(_Keys.email)
+            self.account_email = email.decode("utf-8", "replace") if email else None
 
-        # Instant, offline-friendly: decrypt whatever we cached last time.
-        snapshot = self._cache.load()
-        self.entries = self._decrypt(snapshot.entities)
-        self._set_state(VaultState.LOADING if not self.entries else VaultState.READY)
+            # Publish the offline cache before starting network work.
+            snapshot = self._cache.load()
+            self.entries = self._decrypt(snapshot.entities)
+            self._set_state(VaultState.LOADING if not self.entries else VaultState.READY)
 
         self.refresh()
 
@@ -175,15 +180,25 @@ class EnteVault:
     def complete_login(self, authorization: AuthorizationResponse, password: str, email: str) -> None:
         """Completes login from an authorized response: unwrap keys, fetch + unwrap the
         authenticator key, persist the session, and do a first sync."""
-        self._set_state(VaultState.LOADING)
+        with self._login_lock:
+            self._complete_login(authorization, password, email)
+
+    def _complete_login(self, authorization: AuthorizationResponse, password: str, email: str) -> None:
+        with self._session_lock:
+            self._generation += 1
+            generation = self._generation
+            self._login_pending = True
+            self._set_state(VaultState.LOADING)
         try:
             keys = unwrap(authorization, password)
-            self._api.set_auth_token(keys.token)
+            with self._session_lock:
+                self._check_generation(generation)
+                self._api.set_auth_token(keys.token)
 
             try:
                 wrapped = AuthenticatorKey.from_json(self._api.get("authenticator/key", authenticated=True))
             except APIError as error:
-                if error.kind == "http" and error.status == 404:
+                if error.kind == "http" and error.status == HTTPStatus.NOT_FOUND:
                     # `/authenticator/key` 404s for accounts that have never used Ente Auth —
                     # the generic "account may not exist" message would be wrong and confusing.
                     raise VaultError(VaultError.NO_AUTHENTICATOR_DATA) from None
@@ -194,24 +209,44 @@ class EnteVault:
                 raise crypto.CryptoError("bad_length", "authenticator key")
             unwrapped_auth_key = crypto.secret_box_open(encrypted, nonce, keys.master_key)
 
-            # Persist (token + authKey + email). Password is intentionally never stored.
-            # Under the lock so a keyring adopted mid-way can't miss half of it.
-            with self._keyring_lock:
-                self._keyring.set(_Keys.token, keys.token.encode("utf-8"))
-                self._keyring.set(_Keys.auth_key, unwrapped_auth_key)
-                self._keyring.set(_Keys.email, email.encode("utf-8"))
-
-            self._auth_key = unwrapped_auth_key
-            self.account_email = email
-            self._cache.clear()
+            with self._session_lock:
+                self._check_generation(generation)
+                self._persist_session(keys.token, unwrapped_auth_key, email)
+                self._auth_key = unwrapped_auth_key
+                self.account_email = email
+                self.entries = []
+                self.last_sync = None
+                self.session_expired = False
+                self._cache.clear()
+                self._login_pending = False
             self.refresh()
+            with self._session_lock:
+                self._check_generation(generation)
         except Exception:
-            # Don't strand the vault in .loading when login fails partway.
-            self.state = VaultState.SIGNED_OUT if not self.entries else VaultState.READY
-            stale = self._keyring.get(_Keys.token)
-            self._api.set_auth_token(stale.decode("utf-8", "replace") if stale else None)  # drop the half-adopted token
-            self._notify()
+            with self._session_lock:
+                # A late failure must not restore a session the user signed out of.
+                if generation == self._generation:
+                    self._login_pending = False
+                    self.state = VaultState.SIGNED_OUT if not self.entries else VaultState.READY
+                    stale = self._keyring.get(_Keys.token)
+                    self._api.set_auth_token(stale.decode("utf-8", "replace") if stale else None)
+                    self._notify()
             raise
+
+    def _check_generation(self, generation: int) -> None:
+        if generation != self._generation:
+            raise InterruptedError("Session changed during login")
+
+    def _persist_session(self, token: str, auth_key: bytes, email: str) -> None:
+        # Stage a complete session so failed keyring writes can fall back to memory.
+        session = MemoryKeyring()
+        session.set(_Keys.token, token.encode("utf-8"))
+        session.set(_Keys.auth_key, auth_key)
+        session.set(_Keys.email, email.encode("utf-8"))
+        if self._copy_session(session, self._keyring):
+            return
+        self._keyring = session
+        log.ente.warning("Couldn't save the session to the keyring; keeping it in memory")
 
     # MARK: Sync
 
@@ -219,28 +254,36 @@ class EnteVault:
         """Fetches new/changed entities since the cached cursor, updates the cache, and
         republishes the decrypted entries. Concurrent callers (menu + launch + timer)
         coalesce into one network pass instead of racing the cache."""
-        with self._refresh_lock:
-            in_flight = self._refresh_done
-            if in_flight is None:
-                done = threading.Event()
-                self._refresh_done = done
-        if in_flight is not None:
+        while True:
+            with self._session_lock:
+                generation = self._generation
+            with self._refresh_lock:
+                in_flight = self._refresh_done
+                joined_generation = self._refresh_generation
+                if in_flight is None:
+                    done = threading.Event()
+                    self._refresh_done = done
+                    self._refresh_generation = generation
+                    break
             in_flight.wait()
-            return
+            if joined_generation == generation:
+                return
+            # A new login needs its own pass, not the obsolete pass it waited for.
         try:
-            self._perform_refresh()
+            self._perform_refresh(generation)
         finally:
             with self._refresh_lock:
                 self._refresh_done = None
             done.set()
 
-    def _perform_refresh(self) -> None:
-        if self._auth_key is None:
-            return
-        if not self.entries:
-            self._set_state(VaultState.LOADING)
-        try:
+    def _perform_refresh(self, generation: int) -> None:
+        with self._session_lock:
+            if generation != self._generation or self._auth_key is None or self._login_pending:
+                return
+            if not self.entries:
+                self._set_state(VaultState.LOADING)
             snapshot = self._cache.load()
+        try:
             by_id: Dict[str, CachedEntity] = {entity.id: entity for entity in snapshot.entities}
             cursor = snapshot.since_time
             limit = 500
@@ -251,6 +294,9 @@ class EnteVault:
                     "authenticator/entity/diff",
                     [("sinceTime", str(cursor)), ("limit", str(limit))],
                     authenticated=True)).diff
+                with self._session_lock:
+                    if generation != self._generation:
+                        return
                 for entity in diff:
                     if entity.updated_at is not None:
                         cursor = max(cursor, entity.updated_at)
@@ -263,40 +309,49 @@ class EnteVault:
                 if len(diff) < limit or cursor == cursor_at_page_start:
                     break
 
-            snapshot = Snapshot(list(by_id.values()), cursor)
-            self._cache.save(snapshot)
-
-            self.entries = self._decrypt(snapshot.entities)
-            self.last_sync = time.time()
-            self.session_expired = False
-            self._set_state(VaultState.READY)
+            with self._session_lock:
+                if generation != self._generation:
+                    return
+                snapshot = Snapshot(list(by_id.values()), cursor)
+                self._cache.save(snapshot)
+                self.entries = self._decrypt(snapshot.entities)
+                self.last_sync = time.time()
+                self.session_expired = False
+                self._set_state(VaultState.READY)
         except Exception as error:
-            # A 401 means the token is dead: quietly showing (aging) cached codes forever
-            # would hide that nothing syncs anymore — flag it so the UI can offer to
-            # re-authenticate. Other failures are transient; keep the cached entries.
-            if isinstance(error, APIError) and error.kind == "http" and error.status == 401:
-                self.session_expired = True
-                self._set_state(VaultState.ERROR, "Session expired — please sign in again.")
-            elif not self.entries:
-                self._set_state(VaultState.ERROR, str(error))
-            else:
-                self._notify()
-            log.ente.error("Refresh failed: %s", error)
+            with self._session_lock:
+                if generation != self._generation:
+                    return
+                self._refresh_failed(error)
+
+    def _refresh_failed(self, error: Exception) -> None:
+        # Keep offline codes on transient failures; a dead token needs sign-in.
+        if isinstance(error, APIError) and error.kind == "http" and error.status == HTTPStatus.UNAUTHORIZED:
+            self.session_expired = True
+            self._set_state(VaultState.ERROR, "Session expired — please sign in again.")
+        elif not self.entries:
+            self._set_state(VaultState.ERROR, str(error))
+        else:
+            self._notify()
+        log.ente.error("Refresh failed: %s", error)
 
     # MARK: Sign out
 
     def sign_out(self) -> None:
-        self._keyring.remove(_Keys.token)
-        self._keyring.remove(_Keys.auth_key)
-        self._keyring.remove(_Keys.email)
-        self._cache.clear()
-        self._auth_key = None
-        self.account_email = None
-        self.entries = []
-        self.session_expired = False
-        self.last_sync = None
-        self._api.set_auth_token(None)
-        self._set_state(VaultState.SIGNED_OUT)
+        with self._session_lock:
+            self._generation += 1
+            self._login_pending = False
+            self._keyring.remove(_Keys.token)
+            self._keyring.remove(_Keys.auth_key)
+            self._keyring.remove(_Keys.email)
+            self._cache.clear()
+            self._auth_key = None
+            self.account_email = None
+            self.entries = []
+            self.session_expired = False
+            self.last_sync = None
+            self._api.set_auth_token(None)
+            self._set_state(VaultState.SIGNED_OUT)
 
     # MARK: Decryption
 

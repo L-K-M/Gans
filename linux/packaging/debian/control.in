@@ -29,6 +29,6 @@ Description: Ente Auth 2FA codes, one keystroke away (tray agent)
  No special permission is needed. The hotkey is registered as a GNOME custom
  shortcut, through the GlobalShortcuts portal, or as an X11 key grab, whichever
  the session supports; otherwise bind "gans toggle" yourself. Codes are typed
- through X11 (XWayland under Wayland) and are copied to the clipboard when no X
- server is reachable. The optional app lock asks for your own password through
+ through native X11 and are copied to the clipboard on Wayland or when XTest
+ is unavailable. The optional app lock asks for your own password through
  polkit before codes are shown.

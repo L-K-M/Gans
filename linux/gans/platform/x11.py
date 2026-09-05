@@ -2,8 +2,8 @@
 has focus, handing focus back to it, synthesizing keystrokes into other apps, and grabbing
 a global hotkey. This is the Linux stand-in for ``NSWorkspace.frontmostApplication`` /
 ``NSRunningApplication.activate``, ``CGEventPost`` (``CodeInjector.swift``) and the Carbon
-hotkey (``HotkeyManager.swift``). Under a Wayland session it talks to XWayland, which
-Mutter and KWin bridge to the real focus and input.
+hotkey (``HotkeyManager.swift``). XWayland cannot identify the focused native Wayland
+window, so Wayland sessions use clipboard delivery, not focus hand-off or typing.
 
 Everything goes through python-xlib. A ``Display`` object is **not** thread-safe, so
 ``X11Session`` serialises every request behind a lock and ``X11HotkeyGrabber`` runs its
@@ -28,6 +28,7 @@ from Xlib.protocol import event as xevent
 
 from .. import log
 from ..hotkeyspec import HotkeySpec
+from .session import session_type
 
 __all__ = ["X11Session", "X11HotkeyGrabber"]
 
@@ -183,6 +184,11 @@ class X11Session:
                 self._has_xtest = display.query_extension("XTEST") is not None
             return self._has_xtest
 
+    @property
+    def can_inject(self) -> bool:
+        """XTest plus session-wide focus tracking; XWayland alone supplies neither guarantee."""
+        return session_type() != "wayland" and self.available and self.has_xtest
+
     def _connect(self) -> Optional[xdisplay.Display]:
         """The open display, connecting if needed. Failures are remembered briefly so a
         missing server doesn't cost a connection attempt per call."""
@@ -231,6 +237,9 @@ class X11Session:
         ``_NET_ACTIVE_WINDOW`` on the root is what an EWMH window manager maintains; the
         fallback (no WM, or one that doesn't publish it) walks up from the X input focus
         to the client window that carries ``WM_CLASS``, like ``xdotool getwindowfocus``."""
+        # XWayland may retain an old X11 window while a native Wayland app has focus.
+        if session_type() == "wayland":
+            return None
         with self._lock:
             display = self._connect()
             if display is None:

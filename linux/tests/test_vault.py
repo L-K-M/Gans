@@ -8,6 +8,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import nacl.bindings as sodium
 from nacl.public import PrivateKey, SealedBox
@@ -188,6 +189,31 @@ class VaultTests(unittest.TestCase):
         self.assertEqual(self.cache.load().since_time, 3500)
         self.assertIn(VaultState.LOADING, self.changes)
 
+    def test_failed_keyring_writes_keep_a_complete_memory_session(self):
+        # Losing the keyring mid-login must not leave a token paired with an old key.
+        for failed_key in ("ente.token", "ente.authKey", "ente.email"):
+            with self.subTest(failed_key=failed_key):
+                self.keyring.set("ente.token", b"old-token")
+                self.keyring.set("ente.authKey", bytes(32))
+                self.keyring.set("ente.email", b"old@example.com")
+                self.vault = EnteVault(self.api, self.keyring, self.cache)
+                original_set = self.keyring.set
+
+                def write(account, data):
+                    return False if account == failed_key else original_set(account, data)
+
+                with patch.object(self.keyring, "persistent", True), patch.object(self.keyring, "set", side_effect=write):
+                    self._login()
+                    self.assertTrue(self.vault.is_signed_in)
+                    self.assertFalse(self.vault.keyring_persistent)
+
+                for key in ("ente.token", "ente.authKey", "ente.email"):
+                    self.assertIsNone(self.keyring.get(key))
+                self.vault.restore()
+                self.assertEqual(self.vault.account_email, "alice@example.com")
+                self.assertEqual([e.issuer for e in self.vault.entries], ["Amazon", "GitHub"])
+                self.assertEqual(self.api._auth_token, self.fixture["token"])
+
     def test_restore_decrypts_cache_then_refreshes_with_diff(self):
         self._login()
         # A second vault instance (a relaunch) restores from keyring + cache, then applies a
@@ -334,6 +360,133 @@ class VaultTests(unittest.TestCase):
         self.assertIs(self.vault.state, VaultState.SIGNED_OUT)
         self.assertEqual(self.cache.load().entities, [])
         self.assertIsNone(self.vault.account_email)
+
+    def test_sign_out_discards_an_in_flight_refresh(self):
+        self._login()
+        entered, release = threading.Event(), threading.Event()
+        original_send = self.api._send
+
+        def delayed_send(*args):
+            response = original_send(*args)
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return response
+
+        with patch.object(self.api, "_send", side_effect=delayed_send):
+            worker = threading.Thread(target=self.vault.refresh)
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                self.vault.sign_out()
+            finally:
+                release.set()
+                worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertIs(self.vault.state, VaultState.SIGNED_OUT)
+        self.assertEqual(self.cache.load().entities, [])
+        self.assertEqual(self.cache.load().since_time, 0)
+        self.assertEqual(self.vault.entries, [])
+        self.assertIsNone(self.vault.last_sync)
+        self.assertFalse(self.vault.is_signed_in)
+
+    def test_sign_out_discards_an_in_flight_refresh_error(self):
+        self._login()
+        entered, release = threading.Event(), threading.Event()
+
+        def delayed_error(*args):
+            entered.set()
+            self.assertTrue(release.wait(5))
+            raise APIError("http", status=401)
+
+        with patch.object(self.api, "_send", side_effect=delayed_error):
+            worker = threading.Thread(target=self.vault.refresh)
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                self.vault.sign_out()
+            finally:
+                release.set()
+                worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertIs(self.vault.state, VaultState.SIGNED_OUT)
+        self.assertFalse(self.vault.session_expired)
+        self.assertEqual(self.vault.error_message, "")
+
+    def test_sign_out_discards_an_in_flight_login(self):
+        entered, release = threading.Event(), threading.Event()
+        errors = []
+        original_unwrap = unwrap
+
+        def delayed_unwrap(*args):
+            result = original_unwrap(*args)
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return result
+
+        def login():
+            try:
+                self._login()
+            except InterruptedError as error:
+                errors.append(error)
+
+        with patch("gans.ente.vault.unwrap", side_effect=delayed_unwrap):
+            worker = threading.Thread(target=login)
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                self.vault.sign_out()
+            finally:
+                release.set()
+                worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertFalse(self.vault.is_signed_in)
+        self.assertIs(self.vault.state, VaultState.SIGNED_OUT)
+        self.assertIsNone(self.api._auth_token)
+        self.assertEqual(self.cache.load().entities, [])
+
+    def test_new_login_gets_its_own_sync_after_an_obsolete_refresh(self):
+        self._login()
+        entered, release = threading.Event(), threading.Event()
+        original_send = self.api._send
+        old_worker = None
+        new_worker = None
+        original_persist = self.vault._persist_session
+        persisted = threading.Event()
+
+        def delayed_send(*args):
+            response = original_send(*args)
+            if threading.current_thread() is old_worker:
+                entered.set()
+                self.assertTrue(release.wait(5))
+            return response
+
+        def persist(*args):
+            original_persist(*args)
+            persisted.set()
+
+        with patch.object(self.api, "_send", side_effect=delayed_send), patch.object(
+            self.vault, "_persist_session", side_effect=persist
+        ):
+            old_worker = threading.Thread(target=self.vault.refresh)
+            old_worker.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                self.api.pages = [(0, [_entity(self.fixture["auth_key"], "new",
+                    "otpauth://totp/New?secret=JBSWY3DPEHPK3PXP", 100)])]
+                new_worker = threading.Thread(target=self._login)
+                new_worker.start()
+                self.assertTrue(persisted.wait(5))
+            finally:
+                release.set()
+                old_worker.join(5)
+                if new_worker is not None:
+                    new_worker.join(5)
+        self.assertFalse(old_worker.is_alive())
+        self.assertFalse(new_worker.is_alive())
+        self.assertEqual([entry.id for entry in self.vault.entries], ["new"])
+        self.assertEqual(self.cache.load().since_time, 100)
+        self.assertIs(self.vault.state, VaultState.READY)
 
     def test_concurrent_refreshes_coalesce(self):
         self._login()

@@ -55,9 +55,9 @@ UNLOCK_CAPTION = ("When on, Gans locks on launch (and via “Lock Now”) and as
                   "stay in your keyring.")
 TYPING_AVAILABLE = "Typing into other apps: available (X11)"
 TYPING_UNAVAILABLE = "Typing into other apps: unavailable — codes are copied to the clipboard instead"
-TYPING_CAPTION = ("Typing or pasting a code into the focused app needs an X server: native X11, or XWayland on "
-                  "GNOME and KDE (Gans runs on XWayland there by default). Without one the code is copied to "
-                  "the clipboard instead. Set GANS_GDK_BACKEND=x11 or =wayland to pick the backend yourself.")
+TYPING_CAPTION = ("Automatic typing and pasting require a native X11 session with XTest. "
+                  "On Wayland, codes are copied instead; paste with Ctrl+V. XWayland cannot reliably "
+                  "identify the focused native window. Changing GANS_GDK_BACKEND does not enable typing.")
 NO_KEYRING_WARNING = "No keyring available — Gans will ask you to sign in again after it quits."
 
 

@@ -16,7 +16,7 @@ authenticator. It signs in to your Ente account, syncs your end-to-end
 encrypted codes, and keeps them one keystroke away: the tray menu lists every
 entry with its live code (click to copy), and the global hotkey (Ctrl+Alt+Space
 by default) opens Quick Search, a search field that types the selected code
-straight into whatever field had focus.
+into the previous field on X11, or copies it on Wayland.
 .PP
 Only one instance runs per session. Running
 .B gans
@@ -57,11 +57,11 @@ Print a short usage summary and exit.
 .SH ENVIRONMENT
 .TP
 .B GANS_GDK_BACKEND
-GDK backend to run on. By default Gans runs on X11 (XWayland under a Wayland
-session) because owning the clipboard without focus, typing into other
-applications, and positioning its own popup all need an X server. Set this to
+GDK backend to run on. Gans defaults to X11 (XWayland in a Wayland session)
+for tray clipboard ownership and popup placement. Set this to
 .B wayland
-to run natively on Wayland instead (codes are then copied rather than typed).
+to use native Wayland. All Wayland sessions use clipboard delivery;
+XWayland cannot reliably identify the focused native window.
 .TP
 .B GANS_DEBUG
 When set to a non-empty value, enables debug logging on standard error. Logs

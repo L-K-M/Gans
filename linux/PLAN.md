@@ -17,9 +17,9 @@ to what on Linux and why, and pins the module interfaces so the pieces fit toget
 | **Crypto via libsodium through PyNaCl** (`python3-nacl`) | Exactly the same C library the macOS build uses through `swift-sodium`, called through its low-level `nacl.bindings` — Argon2id (`crypto_pwhash`), `crypto_secretbox`, `crypto_box_seal`, XChaCha20-Poly1305 `secretstream`, and BLAKE2b with salt/personal for `crypto_kdf_derive_from_key`. Byte-exact by construction. |
 | **Tray icon: Ayatana AppIndicator** (`gir1.2-ayatanaappindicator3-0.1`) with a `Gtk.StatusIcon` fallback | AppIndicator/StatusNotifierItem is what Ubuntu GNOME (via the preinstalled `ubuntu-appindicators` extension), KDE, XFCE, Cinnamon and MATE all render. The fallback covers desktops that only have a legacy XEmbed tray. |
 | **Session secrets in the Secret Service** (`python3-secretstorage` → GNOME Keyring / KWallet) | The Linux equivalent of the macOS Keychain. Disk holds only Ente's *already-encrypted* entity blobs. Without a Secret Service the session lives in memory only — the password and keys are **never** written in plaintext. |
-| **GDK runs on X11 (XWayland when the session is Wayland)** | A launcher-style tool needs three things Wayland deliberately withholds from clients: owning the clipboard without focus (tray-menu copy), synthesizing keystrokes into other apps, and positioning its own popup. Through XWayland all three work on GNOME and KDE (Mutter/KWin bridge X11 selections and route XTest input through their virtual devices). `GANS_GDK_BACKEND=wayland` overrides. |
+| **GDK runs on X11 (XWayland when the session is Wayland)** | Supports tray clipboard ownership and popup placement. XWayland does not expose native Wayland focus; Wayland sessions copy codes rather than injecting them. `GANS_GDK_BACKEND=wayland` overrides the toolkit backend, not this safety rule. |
 | **Global hotkey: one backend at a time** — GNOME custom keybinding (gsettings) → XDG GlobalShortcuts portal → X11 `XGrabKey` → manual | GNOME (X11 *and* Wayland) has no API for grabbing keys except its own custom-shortcut mechanism, so Gans registers a "Gans Quick Search" custom shortcut running `gans toggle`. KDE Wayland and others get the portal; classic X11 desktops get `XGrabKey`. Exactly one backend is active so a press never toggles twice. |
-| **Typing a code: X11 XTest** (`python3-xlib`) | The `CGEventPost` equivalent. Layout-independent: the keycode for each character is looked up in the live keyboard mapping (shift state included) and, if a symbol has no key, an unused keycode is temporarily remapped, as `xdotool` does. Degrades to clipboard copy when no X display / XTest is available. |
+| **Typing a code: X11 XTest** (`python3-xlib`) | Layout-independent typing on native X11, using the live keymap and a scratch keycode when needed. Wayland or missing XTest means clipboard-only delivery. |
 | **App lock: polkit `auth_self`** (`pkcheck --allow-user-interaction`) | The Linux stand-in for Touch ID / device password: the desktop's polkit agent asks for the user's own password. Installed as `/usr/share/polkit-1/actions/ch.lkmc.gans.policy`. |
 | **Single instance + CLI via `Gtk.Application`** (`ch.lkmc.Gans` on the session bus) | `gans toggle`, `gans settings`, `gans quit` are forwarded to the running instance through GApplication's D-Bus activation — no bespoke IPC. |
 | **Toasts are desktop notifications** (`Gio.Notification`) | Native on every desktop, supports action buttons ("Try it", "Grant…"), and needs no window placement. |
@@ -233,7 +233,7 @@ class UpdateChecker(configuration: Configuration, prefs: Preferences, dispatch, 
 session_type() -> "x11" | "wayland" | "none" ; desktop() -> str ; is_gnome() ; has_x_display()
 # platform/x11.py
 class X11Session:  # lazily connects to $DISPLAY; safe to construct without one (available == False)
-  available, has_xtest ; active_window() -> int | None ; activate_window(window_id) ; window_name(window_id) -> str | None
+  available, has_xtest, can_inject ; active_window() -> int | None ; activate_window(window_id) ; window_name(window_id) -> str | None
   type_text(text) ; send_ctrl_v() ; close()
 class X11HotkeyGrabber(x11, dispatch): register(spec, on_pressed) -> bool ; unregister()
 # platform/hotkey.py
@@ -288,12 +288,14 @@ Honk.play()
 - The clipboard copy carries `x-kde-passwordManagerHint=secret` and is cleared after the
   configured delay if it is still the most recent clipboard content.
 - Logs never contain secrets, tokens, or codes.
+- App lock fails closed: only explicit polkit authorization unlocks; missing agents,
+  cancellation, and checker failures leave it locked.
 
 ## 6. Known limits
 
 - On Wayland, the global hotkey needs a desktop-level mechanism (GNOME custom shortcut,
   the GlobalShortcuts portal, or a manual binding of `gans toggle`); `XGrabKey` only sees
   keys while an X11 window is focused.
-- Typing into other apps requires an X server (native X11, or XWayland on GNOME/KDE).
-  Elsewhere the code is copied to the clipboard and a notification explains why.
+- Typing requires native X11 with XTest. Wayland sessions copy codes to the clipboard;
+  XWayland cannot reliably identify or activate native Wayland targets.
 - Popup placement on Wayland is up to the compositor (GNOME centers new windows).

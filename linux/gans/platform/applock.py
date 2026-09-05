@@ -13,12 +13,10 @@ second gate so an unlocked desktop left unattended doesn't hand out codes.
 verdict is marshalled back through ``dispatch``. Its exit status decides:
 
 * ``0`` — authorized → unlock.
-* ``1`` with "Not authorized" / "authorization failed", or a dismissed dialog → stay
-  locked: the user (or the policy) actively said no.
-* anything else — ``pkcheck`` missing, the action not registered (running from the
-  source tree), no authentication agent in this session, no polkit authority, a crash —
-  → unlock with a logged warning. The macOS build makes the same call when no device
-  authentication exists: a lock nobody can open is worse than none.
+* ``1`` / ``3`` — denied / dismissed → stay locked, regardless of diagnostic language.
+* anything else — unavailable or failed check → stay locked and log a warning.
+
+An unavailable checker is not proof of identity; only explicit authorization unlocks.
 """
 
 from __future__ import annotations
@@ -27,6 +25,7 @@ import os
 import shutil
 import subprocess
 import threading
+from enum import IntEnum
 from typing import Callable, List, Optional, Tuple
 
 from .. import log
@@ -38,13 +37,18 @@ Dispatch = Callable[[Callable[[], object]], object]
 Completion = Callable[[bool], object]
 
 
+class _PkcheckStatus(IntEnum):
+    AUTHORIZED = 0
+    DENIED = 1
+    DISMISSED = 3
+
+
 class AppLock:
     ACTION_ID = "ch.lkmc.gans.unlock"
     DEFAULT_REASON = "Unlock Gans to access your codes"
     #: The polkit agent's own dialog has no timeout; this bounds a wedged agent. Expiry
     #: counts as a dismissal (the prompt was shown and went unanswered), never as a pass.
     PROMPT_TIMEOUT = 300.0
-    _DENIED_PHRASES = ("not authorized", "authorization failed")
 
     def __init__(self, prefs: Preferences, dispatch: Dispatch):
         self._prefs = prefs
@@ -117,7 +121,7 @@ class AppLock:
         def finish() -> bool:
             self._authenticating = False
             if warning:
-                log.app.warning("Unlocking without a password check: %s", warning)
+                log.app.warning("Unlock check unavailable; staying locked: %s", warning)
             if unlock:
                 self._set_locked(False)
             if completion is not None:
@@ -132,11 +136,10 @@ class AppLock:
 
     @classmethod
     def _check_authorization(cls) -> Tuple[bool, Optional[str]]:
-        """Runs ``pkcheck`` (blocking). Returns ``(unlock, warning)``: ``warning`` is set when
-        we unlock *without* a real check so the log says why."""
+        """Runs ``pkcheck``; reports authorization and any checker failure."""
         binary = cls._pkcheck_binary()
         if binary is None:
-            return True, "pkcheck (polkit) isn't installed"
+            return False, "pkcheck (polkit) isn't installed"
         command = [binary, "--action-id", cls.ACTION_ID, "--process", str(os.getpid()), "--allow-user-interaction"]
         try:
             # errors="replace": a localized agent message in another encoding must not raise.
@@ -146,16 +149,18 @@ class AppLock:
             log.app.warning("The polkit prompt went unanswered for %.0f s; staying locked", cls.PROMPT_TIMEOUT)
             return False, None
         except OSError as error:
-            return True, f"couldn't run pkcheck: {error}"
+            return False, f"couldn't run pkcheck: {error}"
         return cls._classify(result.returncode, (result.stdout or "") + (result.stderr or ""))
 
     @classmethod
     def _classify(cls, returncode: int, output: str) -> Tuple[bool, Optional[str]]:
-        if returncode == 0:
+        if returncode == _PkcheckStatus.AUTHORIZED:
             return True, None
-        lowered = output.lower()
-        if "dismissed" in lowered or (returncode == 1 and any(phrase in lowered for phrase in cls._DENIED_PHRASES)):
+
+        # pkcheck defines denial and cancellation by status, not localized text.
+        if returncode in (_PkcheckStatus.DENIED, _PkcheckStatus.DISMISSED):
             log.app.info("Unlock refused by polkit (exit %s)", returncode)
             return False, None
+
         detail = " ".join(output.split()) or "no output"
-        return True, f"pkcheck exited {returncode}: {detail}"
+        return False, f"pkcheck exited {returncode}: {detail}"

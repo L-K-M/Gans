@@ -216,7 +216,8 @@ class LoginViewModel:
                     # Still on the worker: unwrapping keys and the first sync block too.
                     self._vault.complete_login(step.authorization, password, email)
             except InterruptedError:
-                pass  # deliberately aborted (the user pressed Back) — not an error
+                # Authorization alone is not a completed, persisted session.
+                step = None
             except _EXPECTED_ERRORS as failure:
                 error = failure
             except Exception as failure:

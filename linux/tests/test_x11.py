@@ -69,6 +69,22 @@ class InertX11Tests(unittest.TestCase):
     def test_unreachable_display(self):
         self.assert_inert(X11Session(":59000"))
 
+    def test_wayland_does_not_expose_stale_xwayland_focus(self):
+        with mock.patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland"}):
+            x11 = X11Session(":1")
+            display = mock.MagicMock()
+            display.screen().root.get_full_property.return_value.value = [0x400001]
+            with mock.patch.object(x11, "_connect", return_value=display):
+                self.assertIsNone(x11.active_window())
+
+    def test_injection_requires_session_wide_x11_focus(self):
+        with mock.patch.object(X11Session, "available", new_callable=mock.PropertyMock, return_value=True), \
+             mock.patch.object(X11Session, "has_xtest", new_callable=mock.PropertyMock, return_value=True):
+            x11 = X11Session(":1")
+            for kind, expected in (("x11", True), ("wayland", False)):
+                with self.subTest(kind=kind), mock.patch.dict(os.environ, {"XDG_SESSION_TYPE": kind}):
+                    self.assertEqual(x11.can_inject, expected)
+
     def test_hotkey_grabber_without_display(self):
         grabber = X11HotkeyGrabber(X11Session(":59000"), dispatch=lambda fn: fn())
         self.assertFalse(grabber.register(HotkeySpec.DEFAULT, lambda: None))

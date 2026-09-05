@@ -8,6 +8,9 @@ from __future__ import annotations
 from functools import total_ordering
 from typing import List, Optional
 
+_NUMERIC_IDENTIFIER = 0
+_TEXT_IDENTIFIER = 1
+
 
 @total_ordering
 class SemanticVersion:
@@ -63,7 +66,15 @@ class SemanticVersion:
             return False  # final > pre-release
         if other.prerelease is None:
             return True   # pre-release < final
-        return self.prerelease < other.prerelease
+        return self._prerelease_key() < other._prerelease_key()
+
+    def _prerelease_key(self) -> tuple:
+        # SemVer §11: numeric identifiers sort numerically, below nonnumeric ones.
+        if self.prerelease is None:
+            return ()
+        return tuple((_NUMERIC_IDENTIFIER, int(part)) if part.isascii() and part.isdecimal()
+                     else (_TEXT_IDENTIFIER, part)
+                     for part in self.prerelease.split("."))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SemanticVersion):
@@ -75,7 +86,7 @@ class SemanticVersion:
         components = list(self.components)
         while len(components) > 1 and components[-1] == 0:
             components.pop()
-        return hash((tuple(components), self.prerelease))
+        return hash((tuple(components), self._prerelease_key()))
 
 
 SemanticVersion.ZERO = SemanticVersion.parse("0")

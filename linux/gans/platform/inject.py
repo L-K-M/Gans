@@ -3,9 +3,8 @@ the port of ``CodeInjector.swift``.
 
 The flow: Quick Search records the focused window, then on commit it hides its own
 window, re-activates that one, and synthesizes key events into it. Where macOS needs
-the Accessibility permission, Linux needs an X server with XTest (native X11, or
-XWayland); when that's missing the code is left on the clipboard and the caller is told
-so it can explain.
+the Accessibility permission, Linux needs native X11 with XTest and session-wide focus
+tracking. Wayland uses clipboard delivery; XWayland cannot safely identify native targets.
 """
 
 from __future__ import annotations
@@ -44,8 +43,8 @@ class CodeInjector:
 
     @property
     def can_inject(self) -> bool:
-        """Whether keystrokes can be synthesized at all (an X server with XTest)."""
-        return self._x11.available and self._x11.has_xtest
+        """Whether the driver supports delivery into the session's focused application."""
+        return self._x11.can_inject
 
     # MARK: Delivery
 

@@ -295,6 +295,14 @@ class LoginViewModelTests(unittest.TestCase):
         self.assertEqual(self.model.password, "hunter2")
         self.assertEqual(self.signed_in, 0)
 
+    def test_cancelled_vault_login_is_not_reported_as_success(self):
+        self.vault.error = InterruptedError("Session changed during login")
+        self.model.sign_in_with_password()
+        self.settle()
+        self.assertEqual(self.signed_in, 0)
+        self.assertEqual(self.model.stage, Stage.credentials())
+        self.assertIsNone(self.model.error_message)
+
     def test_crypto_failure_message(self):
         self.vault.error = CryptoError("operation_failed", "key unwrap")
         self.model.sign_in_with_password()

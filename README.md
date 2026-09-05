@@ -38,8 +38,8 @@ The Linux/Ubuntu port lives in [`linux/`](linux/) and ships as an architecture-i
 sudo apt install ./gans_<version>_all.deb
 ```
 
-Same features (tray menu, Quick Search with **Ctrl+Alt+Space**, typing into the focused
-app, app lock), same end-to-end encryption through libsodium. Details, permissions per
+Tray menu, Quick Search with **Ctrl+Alt+Space**, app lock, and the same end-to-end
+encryption through libsodium. Codes are typed on X11 and copied on Wayland. Details, permissions per
 desktop, and building from source: [linux/README.md](linux/README.md).
 
 ## Build

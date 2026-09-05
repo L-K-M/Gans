@@ -142,5 +142,5 @@ jobs:
             Debian-based distributions; dependencies resolve from the archive). On GNOME the
             AppIndicator extension must be enabled (preinstalled on Ubuntu). The Quick Search
             hotkey (Ctrl+Alt+Space) is registered as a GNOME custom shortcut, or falls back
-            to an X11 key grab; codes are typed through X11 (XWayland) and copied to the
-            clipboard otherwise. Details: [linux/README.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/linux/README.md).
+            to the GlobalShortcuts portal or an X11 key grab. Codes are typed on native X11
+            and copied to the clipboard on Wayland. Details: [linux/README.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/linux/README.md).

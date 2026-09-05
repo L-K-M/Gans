@@ -20,6 +20,10 @@ class FakeX11:
         self.typed = []
         self.pastes = 0
 
+    @property
+    def can_inject(self):
+        return self.available and self.has_xtest
+
     def activate_window(self, window_id):
         self.activated.append(window_id)
 

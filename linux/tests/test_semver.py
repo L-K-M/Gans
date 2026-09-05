@@ -23,6 +23,20 @@ class SemanticVersionTests(unittest.TestCase):
         self.assertFalse(V.parse("1.2.0") < V.parse("1.2.0-beta"))
         self.assertTrue(V.parse("1.2.0-alpha") < V.parse("1.2.0-beta"))
 
+    def test_prerelease_identifiers_follow_semver_precedence(self):
+        versions = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta",
+                    "1.0.0-beta.2", "1.0.0-beta.9", "1.0.0-beta.10", "1.0.0-rc.1", "1.0.0"]
+        for older, newer in zip(versions, versions[1:]):
+            with self.subTest(older=older, newer=newer):
+                self.assertLess(V.parse(older), V.parse(newer))
+        self.assertLess(V.parse("1.0.0-2"), V.parse("1.0.0-rc"))
+
+    def test_numeric_prerelease_equality_preserves_hashing(self):
+        # The lenient parser accepts leading zeros; equal values still need equal hashes.
+        left, right = V.parse("1.0.0-beta.01"), V.parse("1.0.0-beta.1")
+        self.assertEqual(left, right)
+        self.assertEqual(hash(left), hash(right))
+
     def test_hash_agrees_with_eq(self):
         self.assertEqual(hash(V.parse("1.2")), hash(V.parse("1.2.0")))
         self.assertEqual(len({V.parse("1.2"), V.parse("1.2.0"), V.parse("v1.2.0.0")}), 1)

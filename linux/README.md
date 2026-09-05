@@ -6,7 +6,7 @@ away. It ships as an architecture-independent `.deb`.
 
 - **Quick Search** — press the global hotkey (default **Ctrl+Alt+Space**) to open a
   Spotlight-style search field anywhere. Type to filter, press **Return**, and Gans
-  **types the current code straight into whatever field had focus**.
+  **types the code into the previous field on X11**, or copies it on Wayland.
 - **Tray menu** — click the key icon to see every entry; click an entry to copy its
   current code to the clipboard.
 
@@ -57,12 +57,11 @@ running instance over D-Bus, so a shortcut can simply run `gans toggle`.
 Linux needs no Accessibility permission. Gans types codes through the X server (XTest):
 
 - **X11 sessions:** works out of the box.
-- **Wayland sessions (GNOME, KDE):** Gans runs on XWayland by default, and both Mutter
-  and KWin route XTest input to the focused window — including native Wayland apps — so
-  typing works there too. Where no X server is reachable, the code is copied to the
-  clipboard instead and a notification says so.
-- `GANS_GDK_BACKEND=wayland` forces native Wayland (typing and window placement are then
-  up to the compositor).
+- **Wayland sessions (including GNOME and KDE):** codes are copied; paste with Ctrl+V.
+  XWayland cannot reliably identify the focused native window, so Gans never injects
+  codes through it. The hotkey still uses GNOME shortcuts or the portal.
+- Gans uses XWayland for clipboard ownership by default. `GANS_GDK_BACKEND=wayland`
+  selects native Wayland; clipboard access and placement then depend on the compositor.
 
 Quick Search keys: **↑/↓** select · **Return** type the code · **Alt+Return** copy
 instead · **Ctrl+C** copy · **Ctrl+1–9** pick the Nth result · hold **Alt** to peek at
@@ -128,9 +127,10 @@ time. See [../CICD.md](../CICD.md) for the CI and release pipeline.
 - **The hotkey does nothing** — open Settings → Quick Search; it names the backend in use
   or tells you to bind `gans toggle` manually. On GNOME check Settings → Keyboard → Custom
   Shortcuts for "Gans Quick Search".
-- **Codes are copied instead of typed** — no X server is reachable (native Wayland
-  without XWayland, or `GANS_GDK_BACKEND=wayland`). Paste with Ctrl+V, or switch "On
-  select" to *Paste the code*.
+- **Codes are copied instead of typed** — Wayland uses clipboard delivery. Paste with
+  Ctrl+V, or log into an X11 session for automatic typing.
+- **Cannot unlock** — check that `pkcheck`, a polkit authentication agent, and Gans's
+  installed policy are available. Failed or unavailable checks leave Gans locked.
 - **"No keyring available"** — install and log into a Secret Service provider
   (`gnome-keyring` on GNOME/Ubuntu, KWallet on KDE, or KeePassXC with its Secret Service
   integration enabled), then sign in again.
