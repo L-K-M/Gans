@@ -106,7 +106,13 @@ class AppLock:
         worker.start()
 
     def _run_prompt(self, completion: Optional[Completion]) -> None:
-        unlock, warning = self._check_authorization()
+        try:
+            unlock, warning = self._check_authorization()
+        except Exception:
+            # Never strand the caller: ``finish`` must run so the guard resets and the
+            # completion fires exactly once (``LAContext`` always calls back, too).
+            log.app.exception("The unlock check failed; staying locked")
+            unlock, warning = False, None
 
         def finish() -> bool:
             self._authenticating = False
@@ -133,7 +139,9 @@ class AppLock:
             return True, "pkcheck (polkit) isn't installed"
         command = [binary, "--action-id", cls.ACTION_ID, "--process", str(os.getpid()), "--allow-user-interaction"]
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=cls.PROMPT_TIMEOUT)
+            # errors="replace": a localized agent message in another encoding must not raise.
+            result = subprocess.run(command, capture_output=True, text=True, errors="replace",
+                                    timeout=cls.PROMPT_TIMEOUT)
         except subprocess.TimeoutExpired:
             log.app.warning("The polkit prompt went unanswered for %.0f s; staying locked", cls.PROMPT_TIMEOUT)
             return False, None

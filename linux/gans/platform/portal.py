@@ -14,7 +14,9 @@ Protocol (https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.
 Requests are answered asynchronously, so ``bind`` runs a nested main loop until each
 ``Response`` arrives (or 30 s pass — the consent dialog needs a human). Every error,
 timeout, or non-zero response code makes ``bind`` return ``False`` so ``HotkeyManager``
-can fall through to the next backend.
+can fall through to the next backend. The nested loop keeps dispatching the app's own
+events, so ``close`` may be called *while* ``bind`` waits: it then closes the pending
+Request (the desktop drops its dialog) and that ``bind`` returns ``False``.
 """
 
 from __future__ import annotations
@@ -60,6 +62,11 @@ class GlobalShortcutsPortal:
         self._connection = connection
         self._session_handle: Optional[str] = None
         self._activated_subscription: Optional[int] = None
+        #: ``(request_path, loop, outcome)`` of the Request a ``bind`` is waiting on.
+        self._pending: Optional[Tuple[str, GLib.MainLoop, Dict[str, object]]] = None
+        #: Identifies the current ``bind`` so one abandoned from a nested main loop can't
+        #: tear down the newer one that replaced it.
+        self._attempt: Optional[object] = None
         #: The desktop's description of the trigger it actually bound (may differ from
         #: the preferred one), for the Settings status line.
         self.trigger_description: Optional[str] = None
@@ -71,8 +78,10 @@ class GlobalShortcutsPortal:
     # MARK: Bind / close
 
     def bind(self, spec: HotkeySpec) -> bool:
-        """Creates a portal session and binds the shortcut. False on any failure."""
+        """Creates a portal session and binds the shortcut. False on any failure — including
+        ``close`` being called while this waits for the desktop's answer."""
         self.close()
+        attempt = self._attempt = object()
         try:
             if self._bind(spec):
                 return True
@@ -80,12 +89,22 @@ class GlobalShortcutsPortal:
             log.hotkey.info("GlobalShortcuts portal request failed: %s", error.message)
         except Exception:
             log.hotkey.exception("GlobalShortcuts portal binding failed")
-        self.close()
+        if self._attempt is attempt:   # not superseded by a newer bind() on this object
+            self.close()
         return False
 
     def close(self) -> None:
-        """Stops listening and closes the portal session (fire-and-forget)."""
+        """Stops listening and closes the portal session (fire-and-forget). A ``bind`` still
+        waiting for the desktop is abandoned: its Request is closed, which ends the consent
+        dialog, and it returns False once its nested loop unwinds."""
         connection = self._connection
+        pending, self._pending = self._pending, None
+        if pending is not None and connection is not None:
+            request_path, loop, outcome = pending
+            outcome["cancelled"] = True
+            connection.call(self.BUS_NAME, request_path, self.REQUEST_INTERFACE, "Close", None, None,
+                            Gio.DBusCallFlags.NONE, self.CALL_TIMEOUT_MS, None, self._on_close_reply)
+            loop.quit()
         if self._activated_subscription is not None and connection is not None:
             connection.signal_unsubscribe(self._activated_subscription)
         self._activated_subscription = None
@@ -108,15 +127,17 @@ class GlobalShortcutsPortal:
         sender = (connection.get_unique_name() or "").lstrip(":").replace(".", "_")
 
         session_token = self._token()
+        # Known up front (the spec fixes the path) so close() can still close the session
+        # when the wait for the CreateSession response is abandoned or times out.
+        self._session_handle = f"/org/freedesktop/portal/desktop/session/{sender}/{session_token}"
         code, results = self._request(
             connection, sender, "CreateSession", "(a{sv})", (),
             {"session_handle_token": GLib.Variant("s", session_token)})
         if code != 0:
-            log.hotkey.info("GlobalShortcuts CreateSession answered %s", code)
             return False
         handle = results.get("session_handle")
-        self._session_handle = (str(handle) if handle
-                                else f"/org/freedesktop/portal/desktop/session/{sender}/{session_token}")
+        if handle:
+            self._session_handle = str(handle)
 
         # Listen before binding so an early activation can't slip past.
         self._activated_subscription = connection.signal_subscribe(
@@ -131,7 +152,6 @@ class GlobalShortcutsPortal:
             connection, sender, "BindShortcuts", "(oa(sa{sv})sa{sv})",
             (self._session_handle, shortcuts, ""), {})
         if code != 0:
-            log.hotkey.info("GlobalShortcuts BindShortcuts answered %s (1 = cancelled by the user)", code)
             return False
         self.trigger_description = self._bound_trigger(results)
         log.hotkey.info("GlobalShortcuts portal bound %s as %s", spec.display_string,
@@ -168,9 +188,9 @@ class GlobalShortcutsPortal:
     def _request(self, connection: Gio.DBusConnection, sender: str, method: str, signature: str,
                  leading: Tuple, options: Dict[str, GLib.Variant]) -> Tuple[int, Dict[str, object]]:
         """Calls a portal method that answers through a Request object and waits (nested
-        main loop) for its ``Response``. Returns ``(code, results)``; a timeout counts as
-        code 2 ("other"). Subscribing *before* the call is essential: the Response can be
-        emitted before the method reply is even read."""
+        main loop) for its ``Response``. Returns ``(code, results)``; a timeout, or ``close``
+        abandoning the wait, counts as code 2 ("other"). Subscribing *before* the call is
+        essential: the Response can be emitted before the method reply is even read."""
         token = self._token()
         request_path = f"/org/freedesktop/portal/desktop/request/{sender}/{token}"
         options = dict(options)
@@ -192,6 +212,7 @@ class GlobalShortcutsPortal:
         subscription = connection.signal_subscribe(
             self.BUS_NAME, self.REQUEST_INTERFACE, "Response", request_path, None,
             Gio.DBusSignalFlags.NONE, on_response)
+        self._pending = (request_path, loop, outcome)
         try:
             connection.call_sync(self.BUS_NAME, self.OBJECT_PATH, self.INTERFACE, method, parameters,
                                  GLib.VariantType("(o)"), Gio.DBusCallFlags.NONE, self.CALL_TIMEOUT_MS, None)
@@ -200,12 +221,20 @@ class GlobalShortcutsPortal:
             if "timed_out" not in outcome:
                 GLib.source_remove(timeout)
         finally:
+            if self._pending is not None and self._pending[1] is loop:
+                self._pending = None
             connection.signal_unsubscribe(subscription)
+        if "cancelled" in outcome:
+            log.hotkey.info("GlobalShortcuts %s abandoned: closed before the desktop answered", method)
+            return 2, {}
         if "code" not in outcome:
             log.hotkey.warning("GlobalShortcuts %s: no response within %.0f s", method, self.RESPONSE_TIMEOUT)
             return 2, {}
+        code = int(outcome["code"])
+        if code != 0:
+            log.hotkey.info("GlobalShortcuts %s answered %s (1 = cancelled by the user)", method, code)
         results = outcome["results"]
-        return int(outcome["code"]), results if isinstance(results, dict) else {}
+        return code, results if isinstance(results, dict) else {}
 
     def _bound_trigger(self, results: Dict[str, object]) -> Optional[str]:
         shortcuts = results.get("shortcuts")
@@ -234,7 +263,8 @@ class GlobalShortcutsPortal:
         self._dispatch(fire)
 
     def _on_close_reply(self, connection: Gio.DBusConnection, result: Gio.AsyncResult) -> None:
+        """Reply to a Session/Request ``Close``; both are fire-and-forget."""
         try:
             connection.call_finish(result)
         except GLib.Error as error:
-            log.hotkey.debug("Closing the GlobalShortcuts session failed: %s", error.message)
+            log.hotkey.debug("Closing a GlobalShortcuts object failed: %s", error.message)

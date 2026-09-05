@@ -3,9 +3,11 @@
 GNOME Shell (X11 and Wayland alike) gives ordinary apps no way to grab a global key —
 but it lets the user define *custom shortcuts* that run a command, and those live in
 plain GSettings under the relocatable ``…media-keys.custom-keybinding`` schema. Gans
-writes one named "Gans Quick Search" that runs ``gans toggle``, which reaches the running
-instance through ``Gtk.Application``'s D-Bus activation. The entry shows up (and can be
-edited or deleted) in Settings → Keyboard → Custom Shortcuts like any user-created one.
+writes one named "Gans Quick Search" that runs ``gans toggle`` (``HotkeyManager`` passes
+the launcher's absolute path, since gnome-settings-daemon spawns the command through its
+own PATH), which reaches the running instance through ``Gtk.Application``'s D-Bus
+activation. The entry shows up (and can be edited or deleted) in Settings → Keyboard →
+Custom Shortcuts like any user-created one.
 
 ``Gio.Settings`` is used directly rather than the ``gsettings`` CLI so the writes are
 typed, land in the user's dconf without spawning a process, and are flushed with

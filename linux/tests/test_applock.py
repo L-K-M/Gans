@@ -148,6 +148,28 @@ class AppLockTests(unittest.TestCase):
                 self.assertFalse(self.authenticate(lock))
         self.assertTrue(lock.is_locked)
 
+    def test_undecodable_agent_output_is_not_fatal(self):
+        # A localized message in another encoding used to raise UnicodeDecodeError on the
+        # worker: the completion never fired and the re-entrancy guard stayed engaged.
+        with self.fake_pkcheck("printf 'Not authorized \\377\\376\\n' >&2; exit 1"):
+            lock = self.lock()
+            self.assertFalse(self.authenticate(lock))
+        self.assertTrue(lock.is_locked)
+        with self.fake_pkcheck("exit 0"):
+            self.assertTrue(self.authenticate(lock))   # a new prompt is allowed again
+        self.assertFalse(lock.is_locked)
+
+    def test_worker_exception_still_completes_and_stays_locked(self):
+        with patch.object(AppLock, "_check_authorization", side_effect=RuntimeError("boom")):
+            lock = self.lock()
+            with self.assertLogs("gans.app", level="ERROR"):
+                self.assertFalse(self.authenticate(lock))
+        self.assertTrue(lock.is_locked)
+        self.assertEqual(self.changes, 1)
+        with self.fake_pkcheck("exit 0"):
+            self.assertTrue(self.authenticate(lock))   # the guard was released
+        self.assertFalse(lock.is_locked)
+
     def test_reentrant_prompt_is_refused_while_one_is_showing(self):
         with self.fake_pkcheck("sleep 0.5; exit 0"):
             lock = self.lock()

@@ -1,6 +1,8 @@
 """GlobalShortcutsPortal against (a) a private session bus with no portal on it and (b) a
 fake ``org.freedesktop.portal.Desktop`` implementing GlobalShortcuts + Request + Session,
-which proves the request/response plumbing and the Activated → on_pressed wiring."""
+which proves the request/response plumbing, the Activated → on_pressed wiring, and what
+happens when the app re-enters from the nested main loop while the desktop's consent
+dialog is up (the fake can hold a BindShortcuts response until told)."""
 
 import os
 import threading
@@ -18,8 +20,10 @@ except (ImportError, ValueError):   # pragma: no cover - depends on the box
     Gio = None
 
 from gans.hotkeyspec import HotkeySpec  # noqa: E402
+from gans.platform.hotkey import HotkeyManager  # noqa: E402
 
 SPEC = HotkeySpec.DEFAULT
+OTHER = HotkeySpec(key="F12", super_=True)
 
 BUS_NAME = "org.freedesktop.portal.Desktop"
 OBJECT_PATH = "/org/freedesktop/portal/desktop"
@@ -110,14 +114,24 @@ class FakePortal:
     real portal it lives outside the client's main loop — on its own thread with its own
     ``MainContext`` — so the client's synchronous calls can't deadlock on it."""
 
-    def __init__(self, address, bind_response=0, trigger="Ctrl+Alt+Space", version=1, respond=True):
+    def __init__(self, address, bind_response=0, trigger="Ctrl+Alt+Space", version=1, respond=True,
+                 hold_binds=0, on_hold=None):
+        """The first ``hold_binds`` BindShortcuts requests stay unanswered — the consent
+        dialog is up — until ``release`` or a Request ``Close`` (which drops them, as the
+        real portal does). ``on_hold(request_path)`` is called, on the portal's thread,
+        when one is held."""
         self.bind_response = bind_response
         self.trigger = trigger
         self.version = version
         self.respond = respond
+        self.hold_binds = hold_binds
+        self.on_hold = on_hold
         self.bound = []
+        self.bind_requests = []
+        self.held = {}
         self.sessions = []
         self.closed_sessions = []
+        self.closed_requests = []
         self._registrations = []
         self._ready = threading.Event()
         self._failure = None
@@ -181,6 +195,7 @@ class FakePortal:
             session, shortcuts, parent_window, options = parameters.unpack()
             self.bound.append((session, shortcuts, parent_window))
             request_path = self._request(sender, options)
+            self.bind_requests.append(request_path)
             invocation.return_value(GLib.Variant("(o)", (request_path,)))
             results = {}
             if self.bind_response == 0:
@@ -188,7 +203,12 @@ class FakePortal:
                     (shortcut_id, {"description": GLib.Variant("s", opts.get("description", "")),
                                    "trigger_description": GLib.Variant("s", self.trigger)})
                     for shortcut_id, opts in shortcuts])
-            self._respond_later(sender, request_path, self.bind_response, results)
+            if len(self.bound) <= self.hold_binds:
+                self.held[request_path] = (sender, self.bind_response, results)
+                if self.on_hold is not None:
+                    self.on_hold(request_path)
+            else:
+                self._respond_later(sender, request_path, self.bind_response, results)
         else:
             invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
 
@@ -197,8 +217,15 @@ class FakePortal:
         self._register(request_path, REQUEST_XML, self._request_call)
         return request_path
 
-    def _request_call(self, _connection, _sender, _path, _interface, _method, _parameters, invocation):
+    def _request_call(self, _connection, _sender, path, _interface, _method, _parameters, invocation):
+        self.closed_requests.append(path)
+        self.held.pop(path, None)   # a closed Request never gets a Response
         invocation.return_value(None)
+
+    def release(self, request_path):
+        """Answers a held BindShortcuts request (the user clicked the dialog)."""
+        sender, code, results = self.held.pop(request_path)
+        self._respond_later(sender, request_path, code, results)
 
     def _session_call(self, _connection, _sender, path, _interface, _method, _parameters, invocation):
         self.closed_sessions.append(path)
@@ -323,7 +350,7 @@ class GlobalShortcutsPortalTests(unittest.TestCase):
         self.assertEqual(self.presses, 0)
 
     def test_unanswered_request_times_out(self):
-        self.start_fake(respond=False)
+        fake = self.start_fake(respond=False)
         with patch.object(self.Portal, "RESPONSE_TIMEOUT", 0.3):
             portal = self.portal()
             started = time.monotonic()
@@ -331,6 +358,140 @@ class GlobalShortcutsPortalTests(unittest.TestCase):
                 self.assertFalse(portal.bind(SPEC))
             self.assertLess(time.monotonic() - started, 3.0)
         self.assertFalse(portal.is_bound)
+        # The session the desktop may have created is closed even though its handle never arrived.
+        self.assertTrue(wait_until(lambda: fake.closed_sessions == fake.sessions))
+
+    # MARK: Re-entrancy while the consent dialog is up
+
+    def in_nested_loop(self, fn):
+        """Runs ``fn`` from the client's main context once the fake holds the BindShortcuts
+        request — i.e. inside ``bind``'s nested main loop, like a GTK event would."""
+        return lambda _request_path: GLib.idle_add(lambda: (fn(), False)[1])
+
+    def test_close_while_bind_waits_abandons_it(self):
+        portal = self.portal()
+        fake = self.start_fake(hold_binds=1, on_hold=self.in_nested_loop(portal.close))
+        started = time.monotonic()
+        with self.assertLogs("gans.hotkey", level="INFO") as logs:
+            self.assertFalse(portal.bind(SPEC))
+        self.assertLess(time.monotonic() - started, 3.0)
+        self.assertTrue(any("abandoned" in line for line in logs.output))
+        self.assertFalse(portal.is_bound)
+        # The desktop is told to drop its dialog and the session is closed.
+        self.assertTrue(wait_until(lambda: fake.closed_requests == fake.bind_requests))
+        self.assertTrue(wait_until(lambda: fake.closed_sessions == fake.sessions))
+        self.assertEqual(fake.held, {})
+        fake.activate("quick-search")
+        pump(150)
+        self.assertEqual(self.presses, 0)
+
+    def test_rebind_from_within_a_waiting_bind_wins(self):
+        portal = self.portal()
+        inner = []
+        fake = self.start_fake(hold_binds=1, on_hold=self.in_nested_loop(lambda: inner.append(portal.bind(OTHER))))
+        self.assertFalse(portal.bind(SPEC))   # abandoned in favour of the inner one
+        self.assertEqual(inner, [True])
+        self.assertTrue(portal.is_bound)
+        self.assertEqual(portal.trigger_description, "Ctrl+Alt+Space")
+        self.assertEqual(len(fake.sessions), 2)
+        self.assertEqual(fake.bound[1][1][0][1]["preferred_trigger"], "LOGO+F12")
+        self.assertTrue(wait_until(lambda: fake.closed_sessions == [fake.sessions[0]]))
+        fake.activate("quick-search", session=fake.sessions[1])
+        self.assertTrue(wait_until(lambda: self.presses == 1))
+        fake.activate("quick-search", session=fake.sessions[0])
+        pump(150)
+        self.assertEqual(self.presses, 1)
+        portal.close()
+        self.assertTrue(wait_until(lambda: fake.closed_sessions == fake.sessions))
+
+
+@unittest.skipUnless(Gio is not None, "PyGObject/Gio not available")
+class HotkeyManagerPortalTests(unittest.TestCase):
+    """HotkeyManager driving the real portal client. Settings' hotkey recorder can call
+    ``register`` again from the nested main loop while the desktop's consent dialog is up;
+    exactly one session may survive that, or a press toggles Quick Search twice."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.session = DisplaySession.start()
+        if "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
+            cls.session.stop()
+            raise unittest.SkipTest("dbus-daemon is not available")
+        from gans.platform.portal import GlobalShortcutsPortal
+        cls.Portal = GlobalShortcutsPortal
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.session.stop()
+
+    def setUp(self):
+        self.presses = 0
+        self.client_connection = private_connection()
+        self.fake = None
+        # The manager builds its portal itself: route it onto the private connection, and
+        # keep the GNOME backend (and its schema lookup) out of the way.
+        connection = self.client_connection
+
+        class PrivatePortal(self.Portal):
+            def __init__(self, on_pressed, dispatch, connection=connection):
+                super().__init__(on_pressed, dispatch, connection=connection)
+
+        for patcher in (patch("gans.platform.portal.GlobalShortcutsPortal", PrivatePortal),
+                        patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": "KDE"})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        if self.fake is not None:
+            self.fake.stop()
+        self.client_connection.close_sync(None)
+
+    def on_pressed(self):
+        self.presses += 1
+
+    def test_register_reentered_during_consent_leaves_one_live_session(self):
+        manager = HotkeyManager(self.on_pressed, lambda fn: fn())   # no X11: portal or nothing
+        inner = []
+        self.fake = fake = FakePortal(
+            os.environ["DBUS_SESSION_BUS_ADDRESS"], hold_binds=1,
+            on_hold=lambda _path: GLib.idle_add(lambda: (inner.append(manager.register(OTHER)), False)[1]))
+        status = manager.register(SPEC)
+        self.assertEqual([s.backend for s in inner], ["portal"])
+        self.assertIs(status, inner[0])   # the superseded call reports what replaced it
+        self.assertIs(manager.status, status)
+        self.assertEqual(manager.spec, OTHER)
+        self.assertEqual(len(fake.sessions), 2)
+        self.assertEqual([bound[1][0][1]["preferred_trigger"] for bound in fake.bound],
+                         ["CTRL+ALT+space", "LOGO+F12"])
+        # The first session and its dialog went away before the second was even asked for.
+        self.assertTrue(wait_until(lambda: fake.closed_sessions == [fake.sessions[0]]))
+        self.assertTrue(wait_until(lambda: fake.closed_requests == [fake.bind_requests[0]]))
+        for session in fake.sessions:
+            fake.activate("quick-search", session=session)
+        self.assertTrue(wait_until(lambda: self.presses >= 1))
+        pump(200)
+        self.assertEqual(self.presses, 1)
+
+        manager.unregister()
+        self.assertTrue(wait_until(lambda: fake.closed_sessions == fake.sessions))
+        for session in fake.sessions:
+            fake.activate("quick-search", session=session)
+        pump(200)
+        self.assertEqual(self.presses, 1)
+
+    def test_unregister_during_consent_installs_nothing(self):
+        manager = HotkeyManager(self.on_pressed, lambda fn: fn())
+        self.fake = fake = FakePortal(
+            os.environ["DBUS_SESSION_BUS_ADDRESS"], hold_binds=1,
+            on_hold=lambda _path: GLib.idle_add(lambda: (manager.unregister(), False)[1]))
+        status = manager.register(SPEC)
+        self.assertEqual((status.backend, status.ok), ("none", False))
+        self.assertIs(manager.status, status)
+        self.assertTrue(wait_until(lambda: fake.closed_sessions == fake.sessions))
+        self.assertTrue(wait_until(lambda: fake.closed_requests == fake.bind_requests))
+        fake.activate("quick-search")
+        pump(200)
+        self.assertEqual(self.presses, 0)
 
 
 if __name__ == "__main__":
