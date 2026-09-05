@@ -1,0 +1,25 @@
+#!/bin/sh
+# Removes the byte-code postinst generated, so dpkg leaves no stray __pycache__
+# directories behind (the dh_python3 idiom for a private module directory).
+set -e
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        if command -v py3clean >/dev/null 2>&1; then
+            py3clean -p gans /usr/share/gans
+        else
+            find /usr/share/gans -name '*.pyc' -delete
+            find /usr/share/gans -type d -name __pycache__ -empty -delete
+        fi
+        ;;
+
+    failed-upgrade)
+        ;;
+
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

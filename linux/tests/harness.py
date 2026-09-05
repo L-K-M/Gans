@@ -19,9 +19,23 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 import unittest
 from typing import Optional
+
+_BUS_CONFIG = """<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:tmpdir=/tmp</listen>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+"""
 
 
 def gtk_available() -> bool:
@@ -80,8 +94,13 @@ class DisplaySession:
         os.environ.pop("DBUS_SESSION_BUS_ADDRESS", None)  # never fall back to the ambient bus
         dbus = None
         if shutil.which("dbus-daemon"):
-            dbus = subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address", "--nopidfile"],
-                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            # A private bus with NO service directories: nothing gets auto-activated, so an
+            # installed gnome-keyring or desktop portal can't wander into the tests.
+            config = tempfile.NamedTemporaryFile("w", prefix="gans-bus-", suffix=".conf", delete=False)
+            config.write(_BUS_CONFIG)
+            config.close()
+            dbus = subprocess.Popen(["dbus-daemon", "--config-file", config.name, "--nofork", "--print-address",
+                                     "--nopidfile"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
             address = dbus.stdout.readline().strip()
             if address:
                 os.environ["DBUS_SESSION_BUS_ADDRESS"] = address

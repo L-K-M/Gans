@@ -1,7 +1,8 @@
 # Gans
 
 A native macOS menu-bar client for [Ente Auth](https://ente.io/auth/) — your end-to-end
-encrypted 2FA codes, one keystroke away.
+encrypted 2FA codes, one keystroke away. Also available as a native **Linux/Ubuntu**
+tray app (see [Linux](#linux)).
 
 **Version:** <!-- version -->1.5.0<!-- /version -->
 
@@ -23,9 +24,23 @@ encrypted 2FA codes, one keystroke away.
 
 ## Install
 
-Download the latest `.dmg` from [Releases](https://github.com/L-K-M/Gans/releases/latest). The
+Download the latest `.dmg` (macOS) or `.deb` (Linux) from
+[Releases](https://github.com/L-K-M/Gans/releases/latest). The macOS
 app is **unsigned** (no Developer ID / notarization), so on first launch run 
 `xattr -dr com.apple.quarantine /Applications/Gans.app`
+
+## Linux
+
+The Linux/Ubuntu port lives in [`linux/`](linux/) and ships as an architecture-independent
+`.deb` on the same [Releases](https://github.com/L-K-M/Gans/releases/latest) page:
+
+```bash
+sudo apt install ./gans_<version>_all.deb
+```
+
+Same features (tray menu, Quick Search with **Ctrl+Alt+Space**, typing into the focused
+app, app lock), same end-to-end encryption through libsodium. Details, permissions per
+desktop, and building from source: [linux/README.md](linux/README.md).
 
 ## Build
 

@@ -200,6 +200,21 @@ class VaultTests(unittest.TestCase):
         self.assertEqual(self.cache.load().since_time, 4500)
         self.assertEqual(relaunched.account_email, "alice@example.com")
 
+    def test_keyring_can_be_adopted_after_construction(self):
+        # The app opens the Secret Service on a worker thread (it may prompt) and hands it
+        # over later; until then the vault must simply look signed out.
+        late = EnteVault(self.api, None, self.cache, dispatch=lambda fn: fn())
+        self.assertFalse(late.is_signed_in)
+        self.assertFalse(late.keyring_persistent)
+        self._login()  # populates self.keyring
+        changes = []
+        late.on_change(lambda: changes.append(1))
+        late.adopt_keyring(self.keyring)
+        self.assertTrue(late.is_signed_in)
+        self.assertEqual(changes, [1])
+        late.restore()
+        self.assertEqual([e.issuer for e in late.entries], ["Amazon", "GitHub"])
+
     def test_restore_without_session_is_signed_out(self):
         self.vault.restore()
         self.assertIs(self.vault.state, VaultState.SIGNED_OUT)

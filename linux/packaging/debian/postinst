@@ -1,0 +1,24 @@
+#!/bin/sh
+# Byte-compiles the private module tree after install/upgrade, the way dh_python3
+# would for a package that keeps its modules in /usr/share/<pkg>. Everything else the
+# package installs (icons, .desktop, MIME handler, metainfo) is picked up by the
+# owning packages' dpkg triggers, so no cache updates are run here.
+set -e
+
+case "$1" in
+    configure)
+        if command -v py3compile >/dev/null 2>&1; then
+            py3compile -p gans /usr/share/gans
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

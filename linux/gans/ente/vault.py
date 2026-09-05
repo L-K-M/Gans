@@ -23,7 +23,7 @@ from .. import b64, crypto, log
 from ..entry import AuthEntry
 from ..search import fold
 from ..store.cache import CachedEntity, EntityCache, Snapshot
-from ..store.keyring import Keyring
+from ..store.keyring import Keyring, MemoryKeyring
 from .api import APIError, EnteAPI
 from .keyunwrap import unwrap
 from .models import AuthenticatorKey, AuthEntityDiff, AuthorizationResponse
@@ -50,10 +50,10 @@ class _Keys:
 
 
 class EnteVault:
-    def __init__(self, api: EnteAPI, keyring: Keyring, cache: Optional[EntityCache] = None,
+    def __init__(self, api: EnteAPI, keyring: Optional[Keyring] = None, cache: Optional[EntityCache] = None,
                  dispatch: Callable[[Callable[[], None]], object] = lambda fn: fn()):
         self._api = api
-        self._keyring = keyring
+        self._keyring: Keyring = keyring if keyring is not None else MemoryKeyring()
         self._cache = cache or EntityCache()
         self._dispatch = dispatch
         self._observers: List[Callable[[], None]] = []
@@ -90,6 +90,13 @@ class EnteVault:
     def _set_state(self, state: VaultState, message: str = "") -> None:
         self.state = state
         self.error_message = message
+        self._notify()
+
+    def adopt_keyring(self, keyring: Keyring) -> None:
+        """Swaps in the real keyring once it has been opened. Opening the Secret Service
+        can block on a desktop prompt (unlock / create keyring), so the app resolves it on
+        a worker thread and hands it over here before restoring the session."""
+        self._keyring = keyring
         self._notify()
 
     @property

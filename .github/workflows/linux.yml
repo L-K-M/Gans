@@ -1,0 +1,59 @@
+name: Linux
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'claude/**']
+
+# Cancel an in-progress run when a branch is pushed again.
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-package:
+    name: Test & package (.deb)
+    runs-on: ubuntu-latest   # 24.04: Python 3.12, GTK 3.24, lintian 2.117 — the primary target
+    defaults:
+      run:
+        working-directory: linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          # Runtime deps from packaging/debian/control.in, plus the headless test rig
+          # (Xvfb, xdotool, a private session bus, GNOME's media-keys schema for the
+          # custom-shortcut backend, libsodium for the crypto vector generator) and the
+          # package validators the tests run when present.
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 \
+            gir1.2-gstreamer-1.0 python3-nacl python3-xlib python3-secretstorage \
+            xvfb xdotool dbus-daemon gnome-settings-daemon-common \
+            lintian desktop-file-utils appstream libsodium-dev
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -t . -v
+
+      - name: Build .deb
+        run: packaging/build-deb.sh
+
+      - name: lintian
+        run: lintian --fail-on error --tag-display-limit 0 dist/gans_*_all.deb
+
+      - name: Install the package and smoke-test it
+        run: |
+          sudo apt-get install -y ./dist/gans_*_all.deb   # resolves Depends like a user install
+          gans --version
+          (cd /usr/share/gans && python3 -c 'import gans; print("gans", gans.__version__)')
+          test -f /usr/share/applications/ch.lkmc.Gans.desktop
+          test -f /usr/share/polkit-1/actions/ch.lkmc.gans.policy
+          test -f /usr/share/icons/hicolor/64x64/apps/ch.lkmc.Gans.png
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: gans-deb
+          path: linux/dist/gans_*_all.deb
+          if-no-files-found: error

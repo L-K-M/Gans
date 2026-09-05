@@ -17,9 +17,38 @@ env:
   APP_NAME: Gans
 
 jobs:
+  linux-deb:
+    name: Build .deb (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Install lintian
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lintian
+
+      - name: Build .deb
+        # build-deb.sh reads VERSION from the environment (the tag is the source of truth).
+        run: linux/packaging/build-deb.sh --output "$RUNNER_TEMP/deb" --no-lintian
+
+      - name: lintian
+        run: lintian --fail-on error --tag-display-limit 0 "$RUNNER_TEMP"/deb/gans_*_all.deb
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: gans-deb
+          path: ${{ runner.temp }}/deb/gans_*_all.deb
+          if-no-files-found: error
+
   release:
     name: Build & publish (unsigned)
     runs-on: macos-14
+    needs: linux-deb
     steps:
       - uses: actions/checkout@v4
 
@@ -74,6 +103,18 @@ jobs:
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
+      - name: Download the Linux .deb
+        uses: actions/download-artifact@v4
+        with:
+          name: gans-deb
+          path: ${{ runner.temp }}/deb
+
+      - name: Locate the .deb
+        run: |
+          DEB=$(find "$RUNNER_TEMP/deb" -name 'gans_*_all.deb' -print -quit)
+          [ -n "$DEB" ] || { echo "::error::Linux .deb artifact not found"; exit 1; }
+          echo "DEB=$DEB" >> "$GITHUB_ENV"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -81,6 +122,7 @@ jobs:
           files: |
             ${{ env.DMG }}
             ${{ env.ZIP }}
+            ${{ env.DEB }}
           generate_release_notes: true
           body: |
             ### Unsigned build
@@ -93,3 +135,12 @@ jobs:
 
             Gans needs the **Accessibility** permission only to type/paste a code into
             another app; copying from the menu works without it.
+
+            ### Linux (.deb)
+
+            `sudo apt install ./gans_${{ env.VERSION }}_all.deb` (Ubuntu 22.04+ and other
+            Debian-based distributions; dependencies resolve from the archive). On GNOME the
+            AppIndicator extension must be enabled (preinstalled on Ubuntu). The Quick Search
+            hotkey (Ctrl+Alt+Space) is registered as a GNOME custom shortcut, or falls back
+            to an X11 key grab; codes are typed through X11 (XWayland) and copied to the
+            clipboard otherwise. Details: [linux/README.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/linux/README.md).

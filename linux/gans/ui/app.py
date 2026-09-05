@@ -125,10 +125,12 @@ class GansApplication(Gtk.Application):
         install_css()
 
         self.prefs = Preferences()
-        self.keyring = open_keyring()
         self.api = EnteAPI()
         self.login_api = EnteAPI()
-        self.vault = EnteVault(self.api, self.keyring, EntityCache(), dispatch=_dispatch)
+        # The real keyring arrives in _start_session (opening it may prompt); until then
+        # the vault is signed out and Quick Search reports "still starting".
+        self.vault = EnteVault(self.api, None, EntityCache(), dispatch=_dispatch)
+        self._session_started = False
         self.app_lock = AppLock(self.prefs, dispatch=_dispatch)
         self.x11 = X11Session()
         self.clipboard = Clipboard()
@@ -180,8 +182,8 @@ class GansApplication(Gtk.Application):
         self.quick_search.entries_provider = entries_provider
         self.quick_search.is_signed_in = lambda: self.vault.is_signed_in
         self.quick_search.on_needs_login = self.login_window.show
-        self.quick_search.is_locked = lambda: self.app_lock.is_locked
-        self.quick_search.on_locked = self._prompt_unlock
+        self.quick_search.is_locked = lambda: not self._session_started or self.app_lock.is_locked
+        self.quick_search.on_locked = self._on_quick_search_locked
         # A Quick Search commit gets the same confirmation as a menu copy (glyph blink,
         # and the honk in honk mode) — the tray item owns the glyph.
         self.quick_search.on_committed = self.tray.confirm_copy
@@ -200,9 +202,21 @@ class GansApplication(Gtk.Application):
     # MARK: Session
 
     def _start_session(self) -> None:
-        """At launch: if the app lock is on and a session exists, start locked and prompt
-        for unlock before touching the token; otherwise restore the session (and open
-        sign-in if nobody's signed in)."""
+        """Opens the keyring on a worker thread — the Secret Service may put up an unlock
+        or create-keyring prompt, which must never freeze the tray — then continues in
+        ``_session_ready``."""
+        def resolve() -> None:
+            keyring = open_keyring()
+            _dispatch(lambda: self._session_ready(keyring))
+        self._run_in_thread(resolve)
+
+    def _session_ready(self, keyring) -> None:
+        """With the keyring in hand: if the app lock is on and a session exists, start
+        locked and prompt for unlock before touching the token; otherwise restore the
+        session (and open sign-in if nobody's signed in)."""
+        self.keyring = keyring
+        self.vault.adopt_keyring(keyring)
+        self._session_started = True
         if self.app_lock.is_enabled and self.vault.is_signed_in:
             self.app_lock.lock_if_enabled()
             self._prompt_unlock()
@@ -215,6 +229,12 @@ class GansApplication(Gtk.Application):
     def _after_restore(self) -> None:
         if not self.vault.is_signed_in:
             self.login_window.show()
+
+    def _on_quick_search_locked(self) -> None:
+        if not self._session_started:
+            self.toast.show("Gans is still starting up — one moment.", duration=3)
+            return
+        self._prompt_unlock()
 
     def _prompt_unlock(self) -> None:
         """Asks for the user's password (polkit); on success, restores the (until-now

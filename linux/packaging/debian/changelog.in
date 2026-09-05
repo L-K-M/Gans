@@ -1,0 +1,5 @@
+gans (@VERSION@) unstable; urgency=medium
+
+  * Release @VERSION@. See https://github.com/L-K-M/Gans/releases
+
+ -- L-K-M <claudecode@lkmc.ch>  @DATE@

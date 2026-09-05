@@ -45,6 +45,28 @@ pad to N's length; `A`/`B`/`S` are hashed into `M1` as minimal big-endian bytes 
 the server (`ente-io/go-srp`). If login proof fails, the leading-zero padding of `S`/`A` in
 `M1` is the first thing to check.
 
+## Linux port (`linux/`)
+
+A Python 3 + GTK 3 tray app packaged as a `.deb`; design and binding interface contracts
+in [linux/PLAN.md](linux/PLAN.md), user docs in [linux/README.md](linux/README.md).
+
+- `linux/gans/` — the package. Everything below `ui/` is headless-testable and imports no
+  GTK: `crypto.py` (libsodium via PyNaCl's low-level bindings — **keep crypto exact**, same
+  rules as `EnteCrypto.swift`), `otp.py`, `entry.py`, `search.py`, `prefs.py`, `ente/`
+  (API, SRP, login, key unwrap, vault), `store/` (Secret Service keyring, encrypted cache).
+  `platform/` wraps X11/XTest, the hotkey backends, clipboard, polkit lock, autostart;
+  `ui/` holds the GTK windows, tray and `app.py` (the `AppDelegate` equivalent).
+- Conventions: Python 3.10-compatible, one primary type per module with `# MARK:`
+  sections, blocking work on threads marshalled back with the `dispatch` callable, never
+  persist secrets in plaintext (Secret Service or memory only), never log secrets/codes.
+- Tests: `cd linux && python3 -m unittest discover -s tests -t .` (GUI tests start their
+  own Xvfb + private session bus via `tests/harness.py`; they skip without Xvfb).
+- Package: `linux/packaging/build-deb.sh` → `linux/dist/gans_<version>_all.deb`; lintian
+  must stay clean. CI: `.github/workflows/linux.yml`.
+- Ente-specific gotchas (SRP padding, base64 flavours, memlimit units, secretstream tag
+  leniency) apply identically — the Python and Swift implementations must agree byte for
+  byte; `tests/vectors/libsodium.json` pins the crypto against libsodium itself.
+
 ## Testing
 
 `xcodebuild -project Gans.xcodeproj -scheme Gans -destination 'platform=macOS' clean test`
