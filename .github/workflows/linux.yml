@@ -29,7 +29,8 @@ jobs:
           # package validators the tests run when present.
           sudo apt-get install -y --no-install-recommends \
             python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 \
-            gir1.2-gstreamer-1.0 python3-nacl python3-xlib python3-secretstorage librsvg2-common \
+            gir1.2-gstreamer-1.0 gstreamer1.0-plugins-base \
+            python3-nacl python3-xlib python3-secretstorage gnome-keyring librsvg2-common \
             xvfb xdotool dbus-daemon gnome-settings-daemon-common \
             lintian desktop-file-utils appstream libsodium-dev
 
