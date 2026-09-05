@@ -128,7 +128,7 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(fields["Maintainer"], "L-K-M <claudecode@lkmc.ch>")
         self.assertEqual(fields["Homepage"], "https://github.com/L-K-M/Gans")
         for package in ("python3 (>= 3.10)", "python3-gi (>= 3.42)", "python3-gi-cairo", "gir1.2-gtk-3.0",
-                        "gir1.2-glib-2.0", "python3-nacl", "python3-xlib", "python3-secretstorage",
+                        "gir1.2-glib-2.0", "python3-nacl", "python3-xlib", "python3-secretstorage", "librsvg2-common",
                         "gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1"):
             self.assertIn(package, fields["Depends"])
         for package in ("gnome-keyring | kwalletmanager | keepassxc", "polkitd | policykit-1",

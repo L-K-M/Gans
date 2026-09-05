@@ -366,9 +366,10 @@ class StatusIconFallbackTests(TrayTestCase):
         from gi.repository import Gtk
         self.assertEqual(self.controller.backend, "statusicon")
         self.assertIsInstance(self.controller._backend._icon, Gtk.StatusIcon)
-        theme = Gtk.IconTheme.get_default()
-        for name in ICON_NAMES:   # unthemed icons in a search path: found by lookup, not by has_icon
-            self.assertIsNotNone(theme.lookup_icon(name, 16, 0), name)
+        if svg_loader_available():   # lookup_icon() only resolves SVGs when gdk-pixbuf can load them
+            theme = Gtk.IconTheme.get_default()
+            for name in ICON_NAMES:   # unthemed icons in a search path: found by lookup, not by has_icon
+                self.assertIsNotNone(theme.lookup_icon(name, 16, 0), name)
         self.assertEqual(self.controller._backend._icon.get_icon_name(), Icon.KEY)
         self.assertEqual(self.controller._backend._icon.get_title(), "Gans")
 
