@@ -180,11 +180,16 @@ class EnteVault:
     def complete_login(self, authorization: AuthorizationResponse, password: str, email: str) -> None:
         """Completes login from an authorized response: unwrap keys, fetch + unwrap the
         authenticator key, persist the session, and do a first sync."""
-        with self._login_lock:
-            self._complete_login(authorization, password, email)
-
-    def _complete_login(self, authorization: AuthorizationResponse, password: str, email: str) -> None:
         with self._session_lock:
+            generation = self._generation
+        with self._login_lock:
+            self._complete_login(authorization, password, email, generation)
+
+    def _complete_login(self, authorization: AuthorizationResponse, password: str, email: str,
+                        expected_generation: int) -> None:
+        with self._session_lock:
+            # A queued login must honor sign-out while it waited for the active login.
+            self._check_generation(expected_generation)
             self._generation += 1
             generation = self._generation
             self._login_pending = True
@@ -277,13 +282,14 @@ class EnteVault:
             done.set()
 
     def _perform_refresh(self, generation: int) -> None:
-        with self._session_lock:
-            if generation != self._generation or self._auth_key is None or self._login_pending:
-                return
-            if not self.entries:
-                self._set_state(VaultState.LOADING)
-            snapshot = self._cache.load()
         try:
+            with self._session_lock:
+                if generation != self._generation or self._auth_key is None or self._login_pending:
+                    return
+                if not self.entries:
+                    self._set_state(VaultState.LOADING)
+                snapshot = self._cache.load()
+
             by_id: Dict[str, CachedEntity] = {entity.id: entity for entity in snapshot.entities}
             cursor = snapshot.since_time
             limit = 500

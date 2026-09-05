@@ -338,6 +338,14 @@ class VaultTests(unittest.TestCase):
         self.assertIs(self.vault.state, VaultState.READY)
         self.assertEqual(len(self.vault.entries), 2)
 
+    def test_refresh_reports_a_cache_read_failure_without_raising(self):
+        self._login()
+        with patch.object(self.cache, "load", side_effect=ValueError("Malformed cache")), \
+             self.assertLogs("gans.ente", level="ERROR"):
+            self.vault.refresh()
+        self.assertIs(self.vault.state, VaultState.READY)
+        self.assertEqual(len(self.vault.entries), 2)
+
     def test_login_with_no_authenticator_data(self):
         self.api.fail_with = APIError("http", status=404)
         with self.assertRaises(VaultError) as context:
@@ -444,6 +452,40 @@ class VaultTests(unittest.TestCase):
         self.assertIs(self.vault.state, VaultState.SIGNED_OUT)
         self.assertIsNone(self.api._auth_token)
         self.assertEqual(self.cache.load().entities, [])
+
+    def test_sign_out_cancels_a_login_waiting_for_another_login(self):
+        entered = threading.Event()
+        gate = threading.Lock()
+        gate.acquire()
+        errors = []
+
+        class WaitingLock:
+            def __enter__(self):
+                entered.set()
+                gate.acquire()
+
+            def __exit__(self, *exc):
+                gate.release()
+
+        def login():
+            try:
+                self._login()
+            except InterruptedError as error:
+                errors.append(error)
+
+        with patch.object(self.vault, "_login_lock", WaitingLock()):
+            worker = threading.Thread(target=login)
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                self.vault.sign_out()
+            finally:
+                gate.release()
+                worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertFalse(self.vault.is_signed_in)
+        self.assertIs(self.vault.state, VaultState.SIGNED_OUT)
 
     def test_new_login_gets_its_own_sync_after_an_obsolete_refresh(self):
         self._login()
