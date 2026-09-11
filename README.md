@@ -4,6 +4,9 @@ A native macOS menu-bar client for [Ente Auth](https://ente.io/auth/) — your e
 encrypted 2FA codes, one keystroke away. Also available as a native **Linux/Ubuntu**
 tray app (see [Linux](#linux)).
 
+> [!IMPORTANT]
+> LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
+
 **Version:** <!-- version -->1.5.0<!-- /version -->
 
 ![Screenshot](screenshot.png)
