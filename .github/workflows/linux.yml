@@ -53,7 +53,7 @@ jobs:
           test -f /usr/share/icons/hicolor/64x64/apps/ch.lkmc.Gans.png
 
       - name: Upload .deb
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gans-deb
           path: linux/dist/gans_*_all.deb
