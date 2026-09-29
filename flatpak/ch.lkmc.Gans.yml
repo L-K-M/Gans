@@ -14,11 +14,16 @@ finish-args:
   # Vault secrets via python-secretstorage → Secret Service API.
   - --talk-name=org.freedesktop.secrets
   # Polkit app lock (packaging/debian installs ch.lkmc.gans.policy).
+  # NOTE: sandboxed, the action file lands at /app/share/polkit-1/actions —
+  # host polkit never reads it, so pkexec prompts are deb-install only.
   - --system-talk-name=org.freedesktop.PolicyKit1
   # Panel icon via StatusNotifierItem where a host watcher exists; absent
   # one, the app degrades to Gtk.StatusIcon inside the sandbox (tray.py's
   # documented fallback chain).
   - --talk-name=org.kde.StatusNotifierWatcher
+  # SNI items each own org.kde.StatusNotifierItem-<pid>-<n>; the sandbox bus
+  # filter denies owning unlisted names, so without this the tray is dead.
+  - --own-name=org.kde.*
   # "Launch at login" writes ~/.config/autostart/gans.desktop.
   - --filesystem=xdg-config/autostart
   # GNOME media-keys custom-shortcut backend writes dconf.
