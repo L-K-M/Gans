@@ -43,6 +43,7 @@ jobs:
         with:
           name: gans-deb
           path: ${{ runner.temp }}/deb/gans_*_all.deb
+          if-no-files-found: error
 
       # The .flatpak is the same .deb's payload staged under /app.
       - name: Build Flatpak bundle
@@ -52,7 +53,7 @@ jobs:
           # Ubuntu 24.04 denies the unprivileged user namespaces bubblewrap
           # (flatpak's sandbox helper) builds in.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true   # absent on kernels without the knob
-          scripts/build-flatpak.sh "$(ls -t "$RUNNER_TEMP"/deb/gans_*_all.deb | head -1)"
+          scripts/build-flatpak.sh "$(find "$RUNNER_TEMP/deb" -maxdepth 1 -type f -name 'gans_*_all.deb' -print -quit)"
 
       - uses: actions/upload-artifact@v4
         with:

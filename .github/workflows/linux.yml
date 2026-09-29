@@ -69,7 +69,7 @@ jobs:
           # Ubuntu 24.04 denies the unprivileged user namespaces bubblewrap
           # (flatpak's sandbox helper) builds in.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true   # absent on kernels without the knob
-          scripts/build-flatpak.sh "$(ls -t linux/dist/gans_*_all.deb | head -1)"
+          scripts/build-flatpak.sh "$(find linux/dist -maxdepth 1 -type f -name 'gans_*_all.deb' -print -quit)"
 
       - uses: actions/upload-artifact@v4
         with:
