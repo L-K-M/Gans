@@ -56,7 +56,7 @@ while IFS= read -r f; do
   sed -i '1!s|/usr/|/app/|g' "$f"
 done < <(grep -rIl '/usr/' "$WORK/stage" 2>/dev/null || true)
 while IFS= read -r f; do
-  sed -i 's|Exec=/usr/bin/|Exec=|' "$f"
+  sed -i -e 's|Exec=/usr/bin/\|Exec=/app/bin/|Exec=|g' -e '/^TryExec=/d' "$f"
 done < <(find "$WORK/stage/share/applications" -type f -name '*.desktop' 2>/dev/null)
 
 # The deb ships ch.lkmc.Gans.desktop and a 64px icon — flatpak's export
