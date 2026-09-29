@@ -43,6 +43,21 @@ jobs:
         with:
           name: gans-deb
           path: ${{ runner.temp }}/deb/gans_*_all.deb
+
+      # The .flatpak is the same .deb's payload staged under /app.
+      - name: Build Flatpak bundle
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+          # Ubuntu 24.04 denies the unprivileged user namespaces bubblewrap
+          # (flatpak's sandbox helper) builds in.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          scripts/build-flatpak.sh "$(ls -t "$RUNNER_TEMP"/deb/gans_*_all.deb | head -1)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gans-flatpak
+          path: linux/dist/gans-amd64.flatpak
           if-no-files-found: error
 
   release:
@@ -109,11 +124,20 @@ jobs:
           name: gans-deb
           path: ${{ runner.temp }}/deb
 
+      - name: Download the Linux Flatpak
+        uses: actions/download-artifact@v4
+        with:
+          name: gans-flatpak
+          path: ${{ runner.temp }}/flatpak
+
       - name: Locate the .deb
         run: |
           DEB=$(find "$RUNNER_TEMP/deb" -name 'gans_*_all.deb' -print -quit)
           [ -n "$DEB" ] || { echo "::error::Linux .deb artifact not found"; exit 1; }
           echo "DEB=$DEB" >> "$GITHUB_ENV"
+          FLATPAK=$(find "$RUNNER_TEMP/flatpak" -name '*.flatpak' -print -quit)
+          [ -n "$FLATPAK" ] || { echo "::error::Linux .flatpak artifact not found"; exit 1; }
+          echo "FLATPAK=$FLATPAK" >> "$GITHUB_ENV"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -123,6 +147,7 @@ jobs:
             ${{ env.DMG }}
             ${{ env.ZIP }}
             ${{ env.DEB }}
+            ${{ env.FLATPAK }}
           generate_release_notes: true
           body: |
             ### Unsigned build
@@ -139,7 +164,9 @@ jobs:
             ### Linux (.deb)
 
             `sudo apt install ./gans_${{ env.VERSION }}_all.deb` (Ubuntu 22.04+ and other
-            Debian-based distributions; dependencies resolve from the archive). On GNOME the
+            Debian-based distributions; dependencies resolve from the archive), or
+            `flatpak install ./gans-amd64.flatpak` — same payload sandboxed (X11 session
+            required for typing/hotkeys; tray icon needs an SNI host or XEmbed). On GNOME the
             AppIndicator extension must be enabled (preinstalled on Ubuntu). The Quick Search
             hotkey (Ctrl+Alt+Space) is registered as a GNOME custom shortcut, or falls back
             to the GlobalShortcuts portal or an X11 key grab. Codes are typed on native X11

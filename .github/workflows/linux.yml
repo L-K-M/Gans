@@ -58,3 +58,21 @@ jobs:
           name: gans-deb
           path: linux/dist/gans_*_all.deb
           if-no-files-found: error
+
+      # Repack the same .deb as a Flatpak bundle (the release workflow ships
+      # it — keep the two in step).
+      - name: Flatpak bundle
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+          # Ubuntu 24.04 denies the unprivileged user namespaces bubblewrap
+          # (flatpak's sandbox helper) builds in.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          scripts/build-flatpak.sh "$(ls -t linux/dist/gans_*_all.deb | head -1)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gans-flatpak
+          path: linux/dist/gans-amd64.flatpak
+          if-no-files-found: error
