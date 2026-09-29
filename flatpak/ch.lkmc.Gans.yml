@@ -14,7 +14,7 @@ finish-args:
   # Vault secrets via python-secretstorage → Secret Service API.
   - --talk-name=org.freedesktop.secrets
   # Polkit app lock (packaging/debian installs ch.lkmc.gans.policy).
-  - --talk-name=org.freedesktop.PolicyKit1
+  - --system-talk-name=org.freedesktop.PolicyKit1
   # Panel icon via StatusNotifierItem where a host watcher exists; absent
   # one, the app degrades to Gtk.StatusIcon inside the sandbox (tray.py's
   # documented fallback chain).
@@ -33,11 +33,11 @@ modules:
     buildsystem: simple
     build-commands:
       # Pure-python + wheels; mirrors the deb's unpinned Depends.
-      - pip3 install --target=/app/python-deps python-xlib PyNaCl SecretStorage
+      - pip3 install --target=/app/python-deps python-xlib==0.33 PyNaCl==1.5.0 SecretStorage==3.3.3
   - name: gans
     buildsystem: simple
     sources:
       - type: dir
-        path: ../dist/flatpak/stage
+        path: ../linux/dist/flatpak/stage
     build-commands:
-      - cp -R . /app/
+      - "if [ -d usr ]; then cp -a usr/. /app/; else cp -a . /app/; fi"
