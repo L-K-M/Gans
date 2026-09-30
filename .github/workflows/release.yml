@@ -39,7 +39,7 @@ jobs:
         run: lintian --fail-on error --tag-display-limit 0 "$RUNNER_TEMP"/deb/gans_*_all.deb
 
       - name: Upload .deb
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gans-deb
           path: ${{ runner.temp }}/deb/gans_*_all.deb
@@ -55,7 +55,7 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true   # absent on kernels without the knob
           scripts/build-flatpak.sh "$(find "$RUNNER_TEMP/deb" -maxdepth 1 -type f -name 'gans_*_all.deb' -print -quit)"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gans-flatpak
           path: linux/dist/gans-amd64.flatpak
