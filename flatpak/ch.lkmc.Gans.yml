@@ -1,0 +1,53 @@
+# Flatpak manifest. scripts/build-flatpak.sh extracts the release .deb into
+# dist/flatpak/stage and builds from that — the bundle ships the same files
+# the .deb installs, relaid under flatpak's /app prefix.
+id: ch.lkmc.Gans
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: gans
+finish-args:
+  - --share=ipc
+  # Hard requirement, not a fallback: XTest typing, session-wide focus
+  # tracking, and global key grabs are X11-only by design (platform/x11.py).
+  - --socket=x11
+  # Vault secrets via python-secretstorage → Secret Service API.
+  - --talk-name=org.freedesktop.secrets
+  # Polkit app lock (packaging/debian installs ch.lkmc.gans.policy).
+  # NOTE: sandboxed, the action file lands at /app/share/polkit-1/actions —
+  # host polkit never reads it, so pkexec prompts are deb-install only.
+  - --system-talk-name=org.freedesktop.PolicyKit1
+  # Panel icon via StatusNotifierItem where a host watcher exists; absent
+  # one, the app degrades to Gtk.StatusIcon inside the sandbox (tray.py's
+  # documented fallback chain).
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # SNI items each own org.kde.StatusNotifierItem-<pid>-<n>; the sandbox bus
+  # filter denies owning unlisted names, so without this the tray is dead.
+  - --own-name=org.kde.*
+  # "Launch at login" writes ~/.config/autostart/gans.desktop.
+  - --filesystem=xdg-config/autostart
+  # GNOME media-keys custom-shortcut backend writes dconf.
+  - --talk-name=ca.desrt.dconf
+  - --filesystem=xdg-run/dconf
+  - --filesystem=xdg-config/dconf
+  # Python wheels installed by the python-deps module below (not in the
+  # GNOME runtime: Xlib, PyNaCl, SecretStorage and their deps).
+  - --env=PYTHONPATH=/app/python-deps
+modules:
+  - name: python-deps
+    buildsystem: simple
+    # flatpak-builder sandboxes build-commands without network; pip needs it.
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      # Pinned pure-python + wheels; mirrors the deb's Depends.
+      - pip3 install --target=/app/python-deps python-xlib==0.33 PyNaCl==1.5.0 SecretStorage==3.3.3
+  - name: gans
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: ../linux/dist/flatpak/stage
+    build-commands:
+      - rm -rf DEBIAN
+      - "if [ -d usr ]; then cp -a usr/. /app/; else cp -a . /app/; fi"

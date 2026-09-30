@@ -23,6 +23,13 @@ sudo apt install ./gans_<version>_all.deb    # resolves the dependencies from th
 gans                                          # or launch "Gans" from your app menu
 ```
 
+Or on any distro with Flatpak, `gans-amd64.flatpak` — the same payload
+sandboxed (`flatpak install ./gans-amd64.flatpak`, pulls the GNOME runtime
+from Flathub). The sandbox keeps Gans's X11-only feature set: typing,
+session focus tracking, and X11 key grabs need a native X11 session (they
+do not work over XWayland-in-Wayland hosts either); the tray icon renders
+only where an SNI host or XEmbed tray exists.
+
 Supported: Ubuntu 22.04 LTS and newer (and other Debian-based distributions with
 Python ≥ 3.10 and GTK 3). Ubuntu 24.04 on GNOME/Wayland is the primary target.
 
@@ -113,6 +120,11 @@ private Xvfb display and session bus.
 cd linux
 packaging/build-deb.sh                 # → dist/gans_<version>_all.deb
 packaging/build-deb.sh --version 1.6.0 # override the version (CI passes the tag)
+
+# Flatpak (repo root): repacks the .deb under flatpak's /app prefix —
+# needs flatpak + flatpak-builder, fetches the GNOME runtime on first build
+../scripts/build-flatpak.sh            # → dist/gans-amd64.flatpak
+../scripts/build-flatpak.sh --install  # build + install into --user flatpak
 ```
 
 The version defaults to `MARKETING_VERSION` in `Gans.xcodeproj` so the Linux and macOS
