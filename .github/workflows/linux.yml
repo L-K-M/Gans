@@ -53,7 +53,7 @@ jobs:
           test -f /usr/share/icons/hicolor/64x64/apps/ch.lkmc.Gans.png
 
       - name: Upload .deb
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gans-deb
           path: linux/dist/gans_*_all.deb
@@ -71,7 +71,7 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true   # absent on kernels without the knob
           scripts/build-flatpak.sh "$(find linux/dist -maxdepth 1 -type f -name 'gans_*_all.deb' -printf '%T@\t%p\n' | sort -rn | head -n1 | cut -f2-)"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gans-flatpak
           path: linux/dist/gans-amd64.flatpak
