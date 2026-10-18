@@ -141,7 +141,7 @@ jobs:
           echo "FLATPAK=$FLATPAK" >> "$GITHUB_ENV"
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ${{ env.APP_NAME }} ${{ env.VERSION }}
           files: |
