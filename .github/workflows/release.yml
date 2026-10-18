@@ -120,13 +120,13 @@ jobs:
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
       - name: Download the Linux .deb
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: gans-deb
           path: ${{ runner.temp }}/deb
 
       - name: Download the Linux Flatpak
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: gans-flatpak
           path: ${{ runner.temp }}/flatpak
