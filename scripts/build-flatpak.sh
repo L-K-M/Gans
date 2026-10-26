@@ -91,6 +91,11 @@ COMMAND_NAME="$(sed -n '/^command:[[:space:]]*/{s///;p;q}' "$MANIFEST")"
 flatpak-builder --run "$WORK/build" "$MANIFEST" \
   sh -c 'bin="/app/bin/$1"; test -x "$bin" || { echo "missing $bin" >&2; ls -l /app/bin >&2; exit 1; }; bad="$(ldd "$bin" 2>/dev/null | grep "not found" || true)"; [ -z "$bad" ] || { printf "unresolved libraries:\n%s\n" "$bad" >&2; exit 1; }' _ "$COMMAND_NAME"
 
+# In the Flatpak, /app/python-deps holds third-party packages, so the
+# copyright file must not present them as covered by "Files: *".
+grep -q '^Files: python-deps/\*' "$WORK/build/files/share/doc/gans/copyright" ||
+  die "copyright does not scope out /app/python-deps"
+
 BUNDLE="$ROOT/linux/dist/gans-amd64.flatpak"
 flatpak build-bundle --runtime-repo="$FLATHUB_REPO" \
   "$WORK/repo" "$BUNDLE" "$APP_ID"
