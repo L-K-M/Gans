@@ -9,10 +9,12 @@ runner (which has network access); nothing is vendored. The Linux one runs on
 
 Runs on pull requests and pushes to `main`.
 
-1. Checkout, select Xcode 16.2, install `xcbeautify`.
+1. Checkout, check that `NSHumanReadableCopyright` states the Unlicense, select Xcode
+   16.2, install `xcbeautify`.
 2. `xcodebuild -resolvePackageDependencies` (explicit, so resolution failures are obvious).
 3. `xcodebuild clean test` with `CODE_SIGNING_ALLOWED=NO`.
-4. On failure, upload `TestResults.xcresult`.
+4. Check that `Third-Party-Notices.txt` is in the built `Gans.app`.
+5. On failure, upload `TestResults.xcresult`.
 
 Local equivalent:
 
@@ -43,11 +45,13 @@ Triggered by pushing a `v*` tag (the tag is the source of truth for the version)
 
 0. Job `linux-deb` (`ubuntu-latest`): build `gans_<version>_all.deb` with `VERSION` from
    the tag, run lintian, upload it as an artifact. The macOS job below `needs` it.
-1. Derive `VERSION` from the tag (`v1.2.0` → `1.2.0`).
+1. Check that `NSHumanReadableCopyright` states the Unlicense, and derive `VERSION` from
+   the tag (`v1.2.0` → `1.2.0`).
 2. Resolve packages, then build Release unsigned with the version baked in.
-3. **Ad-hoc sign** (`codesign --force --deep --sign -`) — required to launch on Apple
-   Silicon, but **not** a Developer ID signature and **not** notarized.
-4. Package a `.zip` (`ditto`) and a `.dmg` (`create-dmg`).
+3. Check `Third-Party-Notices.txt` in the app, then **ad-hoc sign** (`codesign --force
+   --deep --sign -`) — required to launch on Apple Silicon, but **not** a Developer ID
+   signature and **not** notarized.
+4. Package a `.zip` (`ditto`) and a `.dmg` (`create-dmg`), and check the notices in both.
 5. Download the Linux `.deb` artifact and publish a GitHub Release with all three assets
    (`.dmg`, `.zip`, `.deb`), Gatekeeper-bypass notes, and Linux install notes.
 
