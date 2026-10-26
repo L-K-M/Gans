@@ -103,6 +103,12 @@ jobs:
         run: |
           APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release" -maxdepth 1 -name "$APP_NAME.app" -print -quit)
           [ -n "$APP" ] || { echo "::error::built $APP_NAME.app not found"; exit 1; }
+          # The "Bundle license notices" phase must have put the third-party
+          # notices into the app before it is signed and packaged.
+          NOTICES="$APP/Contents/Resources/Third-Party-Notices.txt"
+          test -s "$NOTICES" || { echo "::error::Third-Party-Notices.txt missing from $APP_NAME.app"; exit 1; }
+          grep -q '^libsodium ' "$NOTICES"
+          grep -q '^BigInt ' "$NOTICES"
           # Ad-hoc sign (identity "-"): no certificate, keychain, or API key required,
           # but it IS required for the app to launch on Apple Silicon. This is not a
           # Developer ID signature and the app is not notarized — Gatekeeper still warns.
@@ -125,6 +131,19 @@ jobs:
           [ -f "$DMG" ] || { echo "::error::DMG was not created"; exit 1; }
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      # Check what users download: both archives must carry the notices.
+      - name: Verify notices in the zip and DMG
+        run: |
+          NOTICES_PATH="$APP_NAME.app/Contents/Resources/Third-Party-Notices.txt"
+          # grep without -q reads all input, so unzip never gets SIGPIPE.
+          unzip -p "$ZIP" "$NOTICES_PATH" | grep '^libsodium ' >/dev/null ||
+            { echo "::error::$NOTICES_PATH missing from the zip"; exit 1; }
+          MNT="$RUNNER_TEMP/dmg-check"
+          mkdir -p "$MNT"
+          hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" >/dev/null
+          trap 'hdiutil detach "$MNT" >/dev/null || true' EXIT
+          test -s "$MNT/$NOTICES_PATH" || { echo "::error::$NOTICES_PATH missing from the DMG"; exit 1; }
 
       - name: Download the Linux .deb
         uses: actions/download-artifact@v8

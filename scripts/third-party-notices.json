@@ -1,0 +1,28 @@
+{
+  "comment": "Overrides for swiftpm-notices.py (run by scripts/bundle-notices.sh from the Gans target's Run Script phase). Keys under packages are SwiftPM identities from Package.resolved. Every entry needs a reason. Paths are relative to this file; checkout:<identity>/<path> points into a package checkout.",
+  "preamble": [
+    "Gans's own code is released under the Unlicense (see LICENSE in the source",
+    "repository). The components below are compiled into Gans.app and keep their",
+    "own licenses. The Swift runtime and system frameworks ship with macOS."
+  ],
+  "packages": {
+    "swift-sodium": {
+      "binary_reviewed": true,
+      "reason": "On macOS its Clibsodium product links Clibsodium.xcframework, a prebuilt static libsodium; that library's own license is the libsodium component below."
+    }
+  },
+  "components": [
+    {
+      "name": "libsodium",
+      "version": "1.0.22",
+      "license": "ISC",
+      "source": "https://github.com/jedisct1/libsodium/tree/1.0.22-RELEASE",
+      "files": ["licenses/libsodium-1.0.22-LICENSE"],
+      "verify_version": {
+        "file": "checkout:swift-sodium/Clibsodium.xcframework/macos-arm64_arm64e_x86_64/Headers/Clibsodium/sodium/version.h",
+        "regex": "SODIUM_VERSION_STRING \"([^\"]+)\""
+      },
+      "reason": "Linked statically through swift-sodium's Clibsodium.xcframework; the swift-sodium checkout carries only the wrapper's license. Text from the libsodium tag matching the xcframework's SODIUM_VERSION_STRING."
+    }
+  ]
+}

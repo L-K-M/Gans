@@ -37,7 +37,7 @@ jobs:
         run: brew install xcbeautify
 
       - name: Resolve Swift packages
-        run: xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme "$SCHEME"
+        run: xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme "$SCHEME" -derivedDataPath "$RUNNER_TEMP/DerivedData"
 
       - name: Build & test
         run: |
@@ -46,9 +46,19 @@ jobs:
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             clean test | xcbeautify
+
+      # The test host build runs the "Bundle license notices" phase; fail if
+      # the third-party notices did not land in the app.
+      - name: Verify bundled notices
+        run: |
+          NOTICES="$RUNNER_TEMP/DerivedData/Build/Products/Debug/Gans.app/Contents/Resources/Third-Party-Notices.txt"
+          test -s "$NOTICES" || { echo "::error::Third-Party-Notices.txt missing from Gans.app"; exit 1; }
+          grep -q '^libsodium ' "$NOTICES"
+          grep -q '^BigInt ' "$NOTICES"
 
       - name: Upload test results on failure
         if: failure()
