@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 import Combine
 
-/// The Settings window content: account, Quick Search behavior, permissions, startup, and
-/// updates.
+/// The Settings window content: account, Quick Search behavior, permissions, startup,
+/// updates, and license notices.
 struct SettingsView: View {
     @ObservedObject var preferences: Preferences
     @ObservedObject var vault: EnteVault
@@ -25,6 +25,7 @@ struct SettingsView: View {
             permissionsSection
             startupSection
             updatesSection
+            licenseSection
         }
         .formStyle(.grouped)
         .frame(width: 460)
@@ -150,6 +151,18 @@ struct SettingsView: View {
             }
             Button("Check Now") { updateChecker.checkNow() }
                 .disabled(updateChecker.isChecking)
+        }
+    }
+
+    private var licenseSection: some View {
+        Section("License") {
+            Text("Gans's own code is public domain (Unlicense). It includes third-party components that keep their own licenses.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            // Written into Resources by the "Bundle license notices" build phase.
+            if let notices = Bundle.main.url(forResource: "Third-Party-Notices", withExtension: "txt") {
+                Button("Third-Party Notices…") { NSWorkspace.shared.open(notices) }
+            }
         }
     }
 
