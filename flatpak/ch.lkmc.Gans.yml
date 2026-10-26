@@ -40,9 +40,13 @@ modules:
     build-options:
       build-args:
         - --share=network
+    sources:
+      - type: file
+        path: requirements.txt
     build-commands:
-      # Pinned pure-python + wheels; mirrors the deb's Depends.
-      - pip3 install --target=/app/python-deps python-xlib==0.33 PyNaCl==1.5.0 SecretStorage==3.3.3
+      # Mirrors the deb's Depends. requirements.txt pins the whole set with
+      # hashes; wheels only, so the shipped compiled code is what was reviewed.
+      - "pip3 install --require-hashes --only-binary=:all: --target=/app/python-deps -r requirements.txt"
   - name: gans
     buildsystem: simple
     sources:
