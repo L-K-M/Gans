@@ -155,3 +155,14 @@ time. See [../CICD.md](../CICD.md) for the CI and release pipeline.
 clipboard/polkit/autostart, `ui/` for the GTK 3 windows and tray), `linux/tests` the
 unittest suite, `linux/packaging` the `.deb` build. [PLAN.md](PLAN.md) is the design doc
 with the interface contracts.
+
+## License
+
+Gans's own code is released under the [Unlicense](../LICENSE). The `.deb` contains only
+Gans's own code; its Python dependencies come from distribution packages, which carry
+their own copyright files. The Flatpak also bundles python-xlib (LGPL-2.1-or-later),
+PyNaCl (Apache-2.0, with libsodium), SecretStorage (BSD-3-Clause) and their
+dependencies (cffi with libffi, cryptography with OpenSSL, Rust crates and the Rust
+standard library, pycparser, jeepney, six), which keep their own licenses. Their
+notices ship in `/app/share/doc/gans/` as `Third-Party-Notices.txt` and
+`Rust-Licenses.html`. See also the [main README](../README.md#license).

@@ -74,6 +74,22 @@ in [linux/PLAN.md](linux/PLAN.md), user docs in [linux/README.md](linux/README.m
 Unit-test pure logic only. Login against the live server, the global hotkey, the floating
 panel, and CGEvent typing need a real Mac and are manual-verify items (see README).
 
+## Licensing
+
+- Gans's own code is Unlicense (`LICENSE`). Keep license statements consistent with it:
+  `NSHumanReadableCopyright` (CI checks it), the metainfo, `debian/copyright` and the
+  README `## License` sections.
+- Before adding a dependency, vendored file or bundled asset, confirm its license allows
+  redistribution in our artifacts. Never vendor third-party code without its license file.
+- `scripts/bundle-notices.sh` (a Run Script phase of the `Gans` target) writes
+  `Gans.app/Contents/Resources/Third-Party-Notices.txt` with `scripts/swiftpm-notices.py`
+  from `Package.resolved`; overrides live in `scripts/third-party-notices.json`. The
+  Flatpak's `python-deps` module writes `/app/share/doc/gans/Third-Party-Notices.txt`
+  with `scripts/python-notices.py` from `flatpak/requirements.txt`; overrides and texts
+  live in `flatpak/licenses/`. Both fail on a component without license text or a version
+  the committed texts were not checked for: update the texts (`scripts/wheel-crates.py`
+  for cryptography's crates) and the pins together. Keep the CI notice checks passing.
+
 <!-- shared-rules:start -->
 
 ## Working practices

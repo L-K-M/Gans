@@ -1,0 +1,46 @@
+# Overrides for scripts/python-notices.py, which writes the Flatpak's
+# /app/share/doc/gans/Third-Party-Notices.txt from the wheels that
+# flatpak/requirements.txt installs into /app/python-deps.
+#
+# `versions` pins what each table was checked for: bumping a package in
+# requirements.txt fails the Flatpak build until its table and texts are
+# re-checked. Texts come from the upstream tag of the version the wheel
+# bundles; `files` paths are relative to this file.
+
+[distribution.cryptography]
+# _rust.abi3.so statically links OpenSSL 4.0.3 (dist-info/sboms/sbom.json)
+# and Rust crates. Crate texts: `scripts/wheel-crates.py
+# cryptography==50.0.2`. The Rust standard library (rustc 1.98.1, commit
+# 48a229ce) ships as Rust-Licenses.html via --rust-licenses. OpenSSL 3+
+# is Apache-2.0 and has no NOTICE file.
+versions = ["50.0.2"]
+files = ["cryptography-50.0.2-crates.txt", "openssl-4.0.3-LICENSE.txt"]
+covers = ["openssl"]
+
+[distribution.pynacl]
+# nacl/_sodium.abi3.so statically links libsodium 1.0.18 (ISC); the wheel
+# ships only PyNaCl's Apache-2.0 text. The libsodium text is the one PyNaCl
+# 1.5.0's sdist vendors (src/libsodium/LICENSE, 1.0.18-stable).
+# Metadata says "Apache License 2.0".
+versions = ["1.5.0"]
+files = ["libsodium-1.0.18-LICENSE"]
+covers = ["libsodium"]
+license = "Apache-2.0"
+
+[distribution.cffi]
+# _cffi_backend statically links libffi 3.4.6 (MIT), the version cffi's
+# v2.1.1 wheel workflow builds; the wheel ships only cffi's own text.
+versions = ["2.1.1"]
+files = ["libffi-3.4.6-LICENSE"]
+covers = ["libffi"]
+
+[distribution.python-xlib]
+# Metadata says "LGPLv2+"; its LICENSE is the LGPL 2.1 text. Pure Python,
+# so the shipped files are the source and can be replaced.
+versions = ["0.33"]
+license = "LGPL-2.1-or-later"
+
+[distribution.secretstorage]
+# Metadata says "BSD 3-Clause License"; its LICENSE is that text.
+versions = ["3.3.3"]
+license = "BSD-3-Clause"

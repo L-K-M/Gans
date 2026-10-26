@@ -60,9 +60,9 @@ xcodebuild -project Gans.xcodeproj -scheme Gans -destination 'platform=macOS' bu
 
 ## Dependencies
 
-- [swift-sodium](https://github.com/jedisct1/swift-sodium) — libsodium (Argon2id,
+- [swift-sodium](https://github.com/jedisct1/swift-sodium) (ISC) — libsodium (ISC; Argon2id,
   secretbox, sealed box, secretstream). Gans uses the `Clibsodium` C API directly.
-- [attaswift/BigInt](https://github.com/attaswift/BigInt) — big-integer math for SRP-6a.
+- [attaswift/BigInt](https://github.com/attaswift/BigInt) (MIT) — big-integer math for SRP-6a.
 
 ## Releasing
 
@@ -74,4 +74,17 @@ See [CICD.md](CICD.md) for the pipeline.
 
 ## License
 
-[The Unlicense](LICENSE) — public domain.
+Gans's own code is released under the [Unlicense](LICENSE). The builds bundle third-party
+code that keeps its own licenses: the macOS app bundles libsodium and swift-sodium (ISC)
+and BigInt (MIT); the Flatpak bundles python-xlib (LGPL-2.1-or-later), PyNaCl,
+SecretStorage and their dependencies, with the OpenSSL, libsodium, libffi, Rust crate
+and Rust standard library code compiled into their wheels. The `.deb` bundles no
+third-party code: its Python dependencies come from distribution packages. The notices
+ship inside each artifact:
+
+- macOS: `Gans.app/Contents/Resources/Third-Party-Notices.txt` (Settings > License
+  opens it)
+- Flatpak: `/app/share/doc/gans/Third-Party-Notices.txt` and `Rust-Licenses.html`
+
+python-xlib is pure Python and ships as source in `/app/python-deps`, where it can be
+replaced; upstream is <https://github.com/python-xlib/python-xlib>.
