@@ -51,10 +51,32 @@ mkdir -p "$WORK/stage"
 cp -a "$WORK/debroot/usr/." "$WORK/stage/"
 
 # The gans launcher and library paths hardcode /usr; inside flatpak the
-# prefix is /app.
+# prefix is /app. share/doc stays out: license texts must stay verbatim.
 while IFS= read -r f; do
   sed -i '/^#!/!s|/usr/|/app/|g' "$f"
-done < <(grep -rIl '/usr/' "$WORK/stage" 2>/dev/null || true)
+done < <(find "$WORK/stage" -path "$WORK/stage/share/doc" -prune -o -type f -exec grep -Il '/usr/' {} + 2>/dev/null || true)
+
+# The deb's copyright file says "Files: *" is Unlicense. In the Flatpak,
+# /app/python-deps holds third-party packages (the python-deps module in
+# the manifest), so a later paragraph, which wins in DEP-5, scopes them out.
+COPYRIGHT="$WORK/stage/share/doc/gans/copyright"
+[ -s "$COPYRIGHT" ] || die "no share/doc/gans/copyright inside $DEB"
+cat >> "$COPYRIGHT" <<'DEP5'
+
+Files: python-deps/*
+Copyright: see Third-Party-Notices.txt next to this file
+License: LicenseRef-Bundled-Python-Packages
+Comment: The Flatpak installs these Python packages (flatpak/requirements.txt
+ in the source repository) into /app/python-deps. They and the code compiled
+ into them (OpenSSL, Rust crates, the Rust standard library, libsodium,
+ libffi) keep their own licenses.
+
+License: LicenseRef-Bundled-Python-Packages
+ The license texts, copyright notices and NOTICE files of the packages in
+ /app/python-deps and of the code compiled into them are in
+ Third-Party-Notices.txt and Rust-Licenses.html, next to this file.
+DEP5
+
 while IFS= read -r f; do
   sed -i -e 's|Exec=/usr/bin/|Exec=|g' -e 's|Exec=/app/bin/|Exec=|g' -e '/^TryExec=/d' "$f"
 done < <(find "$WORK/stage/share/applications" -type f -name '*.desktop' 2>/dev/null)
@@ -90,6 +112,16 @@ COMMAND_NAME="$(sed -n '/^command:[[:space:]]*/{s///;p;q}' "$MANIFEST")"
 [ -n "$COMMAND_NAME" ] || die "no command: key in $MANIFEST"
 flatpak-builder --run "$WORK/build" "$MANIFEST" \
   sh -c 'bin="/app/bin/$1"; test -x "$bin" || { echo "missing $bin" >&2; ls -l /app/bin >&2; exit 1; }; bad="$(ldd "$bin" 2>/dev/null | grep "not found" || true)"; [ -z "$bad" ] || { printf "unresolved libraries:\n%s\n" "$bad" >&2; exit 1; }' _ "$COMMAND_NAME"
+
+# The bundle must carry the third-party notices the python-deps module
+# writes, with the components that are certain to be in them.
+DOC="$WORK/build/files/share/doc/gans"
+for notice in Third-Party-Notices.txt Rust-Licenses.html; do
+  [ -s "$DOC/$notice" ] || die "/app/share/doc/gans/$notice missing or empty"
+done
+grep -q '^Contains: openssl' "$DOC/Third-Party-Notices.txt" || die "OpenSSL missing from Third-Party-Notices.txt"
+grep -q '^Contains: libsodium' "$DOC/Third-Party-Notices.txt" || die "libsodium missing from Third-Party-Notices.txt"
+grep -q '^python-xlib ' "$DOC/Third-Party-Notices.txt" || die "python-xlib missing from Third-Party-Notices.txt"
 
 # In the Flatpak, /app/python-deps holds third-party packages, so the
 # copyright file must not present them as covered by "Files: *".

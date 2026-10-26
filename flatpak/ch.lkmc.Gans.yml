@@ -43,10 +43,24 @@ modules:
     sources:
       - type: file
         path: requirements.txt
+      - type: file
+        path: ../scripts/python-notices.py
+      - type: dir
+        path: licenses
+        dest: licenses
     build-commands:
       # Mirrors the deb's Depends. requirements.txt pins the whole set with
       # hashes; wheels only, so the shipped compiled code is what was reviewed.
       - "pip3 install --require-hashes --only-binary=:all: --target=/app/python-deps -r requirements.txt"
+      # Third-party notices for those wheels and the code compiled into them
+      # (OpenSSL, Rust crates and std, libsodium, libffi). Fails when one has
+      # no license text or a pinned version changed (licenses/python-notices.toml).
+      - >-
+        python3 -I python-notices.py --path /app/python-deps
+        --overrides licenses/python-notices.toml
+        --rust-licenses licenses/rust-1.98.1-COPYRIGHT-library.html
+        --title "Gans's Flatpak bundles the Python packages below in /app/python-deps."
+        --out /app/share/doc/gans/Third-Party-Notices.txt
   - name: gans
     buildsystem: simple
     sources:
