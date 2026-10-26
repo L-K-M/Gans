@@ -21,6 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Finder's Get Info and the About panel show this string. It must agree
+      # with LICENSE (Unlicense) in both build configurations of the app.
+      - name: Check license statements
+        run: |
+          test "$(grep -cF 'INFOPLIST_KEY_NSHumanReadableCopyright = "Public domain (Unlicense). Bundled components keep their own licenses; see Third-Party-Notices.txt.";' "$PROJECT/project.pbxproj")" -eq 2 ||
+            { echo "::error::NSHumanReadableCopyright must state the Unlicense in Debug and Release"; exit 1; }
+
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
