@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A hotkey press that arrives just as its shortcut is changed or turned off no
+  longer fires the old action (Keycap 0.1.1).
+- When GitHub's rate limit stops a Check for Updates, the alert says when to
+  try again instead of showing a bare HTTP 403 (Updraft 0.2.0).
 - Adopted Updraft for update checks. Version parsing is stricter and pre-releases
   order per SemVer, an unparseable version is reported instead of claiming you are up
   to date, and skipping a version survives a retag. A Check Now click during a
