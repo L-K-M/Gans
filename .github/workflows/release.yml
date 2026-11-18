@@ -63,7 +63,7 @@ jobs:
 
   release:
     name: Build & publish (unsigned)
-    runs-on: macos-14
+    runs-on: macos-15
     needs: linux-deb
     steps:
       - uses: actions/checkout@v7

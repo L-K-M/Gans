@@ -212,7 +212,7 @@ and cache.
 ---
 
 ## 7. CI/CD (mirrors Zap/MacDring)
-- `.github/workflows/ci.yml`: `macos-14`, Xcode 16.2, `xcodebuild clean test`
+- `.github/workflows/ci.yml`: `macos-15`, Xcode 16.2, `xcodebuild clean test`
   (`CODE_SIGNING_ALLOWED=NO`), packages auto‑resolved by xcodebuild.
 - `.github/workflows/release.yml`: on `v*` tag → Release build, ad‑hoc `codesign -s -`,
   `.zip` + `.dmg`, GitHub Release with Gatekeeper‑bypass notes.
