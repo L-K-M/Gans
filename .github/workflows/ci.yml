@@ -59,6 +59,8 @@ jobs:
           test -s "$NOTICES" || { echo "::error::Third-Party-Notices.txt missing from Gans.app"; exit 1; }
           grep -q '^libsodium ' "$NOTICES"
           grep -q '^BigInt ' "$NOTICES"
+          grep -q '^Keycap ' "$NOTICES"
+          grep -q '^Updraft ' "$NOTICES"
 
       - name: Upload test results on failure
         if: failure()

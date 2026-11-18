@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UpdraftKit
 
 /// Hosts `SettingsView` in a standard window, flipping the agent to `.regular` while it's
 /// visible (like the login window) so it can take focus and show in the Dock.

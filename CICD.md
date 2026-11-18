@@ -1,9 +1,9 @@
 # CI/CD
 
 Three GitHub Actions workflows. The macOS ones run on `macos-15` with Xcode pinned to
-**16.2**; Swift packages (`swift-sodium`, `BigInt`) are resolved by `xcodebuild` on the
-runner (which has network access); nothing is vendored. The Linux one runs on
-`ubuntu-latest`.
+**16.2**; Swift packages (`swift-sodium`, `BigInt`, `Keycap`, `Updraft`) are
+resolved by `xcodebuild` on the runner (which has network access); nothing is
+vendored. The Linux one runs on `ubuntu-latest`.
 
 ## CI — `.github/workflows/ci.yml`
 
