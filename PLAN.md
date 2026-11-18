@@ -67,9 +67,6 @@ Gans/
 │   ├── QuickSearchModel.swift     ObservableObject: query, results, selection
 │   ├── QuickSearchView.swift      SwiftUI search field + results list
 │   └── QuickSearchPanel.swift     borderless key NSPanel, centered, escape/arrows/return
-├── Hotkey/
-│   ├── KeyCodes.swift             virtual key codes + Carbon modifier mapping
-│   └── CarbonHotkey.swift         RegisterEventHotKey wrapper (no Accessibility needed)
 ├── Paste/
 │   └── CodeInjector.swift         restore prev-frontmost app, then type code via CGEvent (or ⌘V)
 ├── Auth/
@@ -81,10 +78,8 @@ Gans/
 ├── Common/
 │   ├── ActivationPolicy.swift     accessory↔regular handoff helper
 │   └── Logging.swift              os.Logger wrapper
-├── Updates/                       ported verbatim from Zap (GitHub release checker)
-│   ├── GitHubRelease.swift  GitHubReleaseClient.swift  SemanticVersion.swift
-│   ├── UpdateChecker.swift
 └── Resources/Assets.xcassets      AppIcon + AccentColor
+    (the GitHub release checker now comes from UpdraftKit, the hotkey from KeycapKit)
 
 GansTests/
 ├── Base32Tests.swift              RFC 4648 vectors
@@ -93,8 +88,7 @@ GansTests/
 ├── SearchFilterTests.swift        ranking (prefix > substring), tie-breaks
 ├── Base64Tests.swift              std vs url round-trips
 ├── PreferencesTests.swift         defaults + encode/decode
-├── HotkeySpecTests.swift          Codable + display string
-└── SemanticVersionTests.swift     ported from Zap
+└── HotkeySpecTests.swift          Codable + persisted JSON keys
 ```
 
 ---

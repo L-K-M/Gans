@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import KeycapKit
+import UpdraftKit
 
 /// Boots and wires the app: initializes crypto, installs the menu-bar item and global
 /// hotkey, restores the Ente session, and coordinates the windows.
@@ -12,8 +13,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let loginAPI = EnteAPI()
     private lazy var appLock = AppLock(preferences: preferences)
 
+    /// Gans deliberately never downloads a release binary (see commit dd93797): the
+    /// alert's Download button keeps opening the release page instead.
     private lazy var updateChecker = UpdateChecker(
-        configuration: .init(owner: "L-K-M", repo: "Gans", appName: "Gans")
+        configuration: .init(owner: "L-K-M", repo: "Gans", appName: "Gans",
+                              autoDownloadAssets: false)
     )
     private lazy var statusItemController = StatusItemController(vault: vault, preferences: preferences, appLock: appLock)
     private lazy var quickSearch = QuickSearchController(preferences: preferences)

@@ -14,8 +14,8 @@ See [PLAN.md](PLAN.md) for the full design and the Ente protocol spec.
 - `Gans/Ente` — API client, DTOs, SRP, login orchestration, key unwrap, the vault.
 - `Gans/Store` — Keychain + encrypted-entity disk cache.
 - `Gans/MenuBar`, `Gans/QuickSearch`, `Gans/Paste`, `Gans/Auth`, `Gans/Settings` —
-  UI/interaction. The global hotkey comes from KeycapKit.
-- `Gans/Updates` — reusable GitHub release checker (shared verbatim with the sibling apps).
+  UI/interaction. The global hotkey comes from KeycapKit and the update checker
+  from UpdraftKit.
 - `GansTests` — pure-logic tests (RFC vectors, parsing, search, base64).
 
 The Xcode project uses **file-system-synchronized groups**: new `.swift` files under
@@ -81,6 +81,9 @@ panel, and CGEvent typing need a real Mac and are manual-verify items (see READM
 - First-party [KeycapKit](https://github.com/L-K-M/Keycap) — the shared global-hotkey
   registration, key-combo model, display strings and shortcut recorder; pinned by tag up
   to the next minor.
+- First-party [UpdraftKit](https://github.com/L-K-M/Updraft) — the shared GitHub
+  release checker (scheduling, persisted choices, alerts); pinned by tag up to the next
+  minor.
 
 ## Licensing
 

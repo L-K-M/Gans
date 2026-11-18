@@ -60,6 +60,7 @@ jobs:
           grep -q '^libsodium ' "$NOTICES"
           grep -q '^BigInt ' "$NOTICES"
           grep -q '^Keycap ' "$NOTICES"
+          grep -q '^Updraft ' "$NOTICES"
 
       - name: Upload test results on failure
         if: failure()

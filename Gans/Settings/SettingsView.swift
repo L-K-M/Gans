@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import UpdraftKit
 
 /// The Settings window content: account, Quick Search behavior, permissions, startup,
 /// updates, and license notices.

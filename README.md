@@ -48,7 +48,7 @@ desktop, and building from source: [linux/README.md](linux/README.md).
 ## Build
 
 ```bash
-# Requires Xcode 16.2+. Swift packages (swift-sodium, BigInt, Keycap) resolve automatically.
+# Requires Xcode 16.2+. Swift packages (swift-sodium, BigInt, Keycap, Updraft) resolve automatically.
 xcodebuild -project Gans.xcodeproj -scheme Gans -destination 'platform=macOS' build
 
 # or an incremental Release build that reveals the product in Finder:
@@ -66,6 +66,9 @@ xcodebuild -project Gans.xcodeproj -scheme Gans -destination 'platform=macOS' bu
 - [Keycap](https://github.com/L-K-M/Keycap) (Unlicense) — first-party shared global-hotkey
   registration, the key-combo model, display strings and the shortcut recorder; pinned by
   tag up to the next minor.
+- [Updraft](https://github.com/L-K-M/Updraft) (Unlicense) — first-party shared GitHub
+  release checker (scheduling, persisted choices, alerts); pinned by tag up to the next
+  minor.
 
 ## Releasing
 
@@ -79,7 +82,7 @@ See [CICD.md](CICD.md) for the pipeline.
 
 Gans's own code is released under the [Unlicense](LICENSE). The builds bundle third-party
 code that keeps its own licenses: the macOS app bundles libsodium and swift-sodium (ISC),
-BigInt (MIT) and Keycap (Unlicense); the Flatpak bundles python-xlib
+BigInt (MIT), Keycap (Unlicense) and Updraft (Unlicense); the Flatpak bundles python-xlib
 (LGPL-2.1-or-later), PyNaCl, SecretStorage and their dependencies, with the OpenSSL,
 libsodium, libffi, Rust crate and Rust standard library code compiled into their wheels.
 The `.deb` bundles no third-party code: its Python dependencies come from distribution
