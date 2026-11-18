@@ -7,13 +7,7 @@ final class HotkeySpecTests: XCTestCase {
     func testDefaultIsControlOptionSpace() {
         let spec = HotkeySpec.default
         XCTAssertEqual(spec.keyCode, UInt32(kVK_Space))
-        XCTAssertEqual(spec.displayString, "⌃⌥Space")
-    }
-
-    func testDisplayStringOrdersModifiers() {
-        let spec = HotkeySpec(keyCode: UInt32(kVK_ANSI_E),
-                              modifiers: UInt32(cmdKey | shiftKey | controlKey | optionKey))
-        XCTAssertEqual(spec.displayString, "⌃⌥⇧⌘E")
+        XCTAssertEqual(spec.modifiers, UInt32(controlKey | optionKey))
     }
 
     func testCodableRoundTrip() throws {
@@ -23,10 +17,11 @@ final class HotkeySpecTests: XCTestCase {
         XCTAssertEqual(decoded, spec)
     }
 
-    func testCarbonModifierTranslation() {
-        let carbon = KeyCodes.carbonModifiers(from: [.command, .shift])
-        XCTAssertEqual(carbon & UInt32(cmdKey), UInt32(cmdKey))
-        XCTAssertEqual(carbon & UInt32(shiftKey), UInt32(shiftKey))
-        XCTAssertEqual(carbon & UInt32(optionKey), 0)
+    /// The persisted payload must stay exactly `{"keyCode","modifiers"}`: it lives in
+    /// `UserDefaults`, and a shape change would silently rewrite saved shortcuts.
+    func testPersistedJSONKeys() throws {
+        let data = try JSONEncoder().encode(HotkeySpec(keyCode: 42, modifiers: 0x900))
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertEqual(object?.keys.sorted(), ["keyCode", "modifiers"])
     }
 }

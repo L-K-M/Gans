@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import KeycapKit
 
 /// Boots and wires the app: initializes crypto, installs the menu-bar item and global
 /// hotkey, restores the Ente session, and coordinates the windows.
@@ -18,7 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var quickSearch = QuickSearchController(preferences: preferences)
     private lazy var loginWindow = LoginWindowController(vault: vault, api: loginAPI)
     private lazy var settingsWindow = SettingsWindowController(preferences: preferences, vault: vault, updateChecker: updateChecker)
-    private let hotkey = CarbonHotkey()
+    /// Four-character Carbon signature `'GANS'`, unchanged from the app's original copy.
+    private static let hotkeySignature: OSType = 0x4741_4E53
+
+    private let hotkey = CarbonHotkey(identifier: 1, signature: AppDelegate.hotkeySignature)
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -127,8 +131,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func registerHotkey() {
         hotkey.onPressed = { [weak self] in self?.quickSearch.toggle() }
-        if !hotkey.register(preferences.hotkey) {
-            Log.hotkey.error("Failed to register global hotkey \(self.preferences.hotkey.displayString, privacy: .public)")
+        let result = hotkey.register(preferences.hotkey.combo)
+        if !result.isRegistered {
+            let reason = result.failureDescription ?? "unknown failure"
+            Log.hotkey.error("Failed to register global hotkey \(self.preferences.hotkey.displayString, privacy: .public): \(reason, privacy: .public)")
         }
     }
 

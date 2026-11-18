@@ -109,6 +109,7 @@ jobs:
           test -s "$NOTICES" || { echo "::error::Third-Party-Notices.txt missing from $APP_NAME.app"; exit 1; }
           grep -q '^libsodium ' "$NOTICES"
           grep -q '^BigInt ' "$NOTICES"
+          grep -q '^Keycap ' "$NOTICES"
           # Ad-hoc sign (identity "-"): no certificate, keychain, or API key required,
           # but it IS required for the app to launch on Apple Silicon. This is not a
           # Developer ID signature and the app is not notarized — Gatekeeper still warns.

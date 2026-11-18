@@ -48,7 +48,7 @@ desktop, and building from source: [linux/README.md](linux/README.md).
 ## Build
 
 ```bash
-# Requires Xcode 16.2+. Swift packages (swift-sodium, BigInt) resolve automatically.
+# Requires Xcode 16.2+. Swift packages (swift-sodium, BigInt, Keycap) resolve automatically.
 xcodebuild -project Gans.xcodeproj -scheme Gans -destination 'platform=macOS' build
 
 # or an incremental Release build that reveals the product in Finder:
@@ -63,6 +63,9 @@ xcodebuild -project Gans.xcodeproj -scheme Gans -destination 'platform=macOS' bu
 - [swift-sodium](https://github.com/jedisct1/swift-sodium) (ISC) — libsodium (ISC; Argon2id,
   secretbox, sealed box, secretstream). Gans uses the `Clibsodium` C API directly.
 - [attaswift/BigInt](https://github.com/attaswift/BigInt) (MIT) — big-integer math for SRP-6a.
+- [Keycap](https://github.com/L-K-M/Keycap) (Unlicense) — first-party shared global-hotkey
+  registration, the key-combo model, display strings and the shortcut recorder; pinned by
+  tag up to the next minor.
 
 ## Releasing
 
@@ -75,12 +78,12 @@ See [CICD.md](CICD.md) for the pipeline.
 ## License
 
 Gans's own code is released under the [Unlicense](LICENSE). The builds bundle third-party
-code that keeps its own licenses: the macOS app bundles libsodium and swift-sodium (ISC)
-and BigInt (MIT); the Flatpak bundles python-xlib (LGPL-2.1-or-later), PyNaCl,
-SecretStorage and their dependencies, with the OpenSSL, libsodium, libffi, Rust crate
-and Rust standard library code compiled into their wheels. The `.deb` bundles no
-third-party code: its Python dependencies come from distribution packages. The notices
-ship inside each artifact:
+code that keeps its own licenses: the macOS app bundles libsodium and swift-sodium (ISC),
+BigInt (MIT) and Keycap (Unlicense); the Flatpak bundles python-xlib
+(LGPL-2.1-or-later), PyNaCl, SecretStorage and their dependencies, with the OpenSSL,
+libsodium, libffi, Rust crate and Rust standard library code compiled into their wheels.
+The `.deb` bundles no third-party code: its Python dependencies come from distribution
+packages. The notices ship inside each artifact:
 
 - macOS: `Gans.app/Contents/Resources/Third-Party-Notices.txt` (Settings > License
   opens it)

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		BB0000000000000000000101 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000000000000000000111 /* Clibsodium */; };
 		BB0000000000000000000102 /* BigInt in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000000000000000000112 /* BigInt */; };
+		BB0000000000000000000103 /* KeycapKit in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000000000000000000113 /* KeycapKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,6 +39,7 @@
 			files = (
 				BB0000000000000000000101 /* Clibsodium in Frameworks */,
 				BB0000000000000000000102 /* BigInt in Frameworks */,
+				BB0000000000000000000103 /* KeycapKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -92,6 +94,7 @@
 			packageProductDependencies = (
 				BB0000000000000000000111 /* Clibsodium */,
 				BB0000000000000000000112 /* BigInt */,
+				BB0000000000000000000113 /* KeycapKit */,
 			);
 			productName = Gans;
 			productReference = AA0000000000000000000006 /* Gans.app */;
@@ -151,6 +154,7 @@
 			packageReferences = (
 				BB0000000000000000000121 /* XCRemoteSwiftPackageReference "swift-sodium" */,
 				BB0000000000000000000122 /* XCRemoteSwiftPackageReference "BigInt" */,
+				BB0000000000000000000123 /* XCRemoteSwiftPackageReference "Keycap" */,
 			);
 			productRefGroup = AA0000000000000000000003 /* Products */;
 			projectDirPath = "";
@@ -451,6 +455,14 @@
 				version = 5.7.0;
 			};
 		};
+		BB0000000000000000000123 /* XCRemoteSwiftPackageReference "Keycap" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/L-K-M/Keycap";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -463,6 +475,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BB0000000000000000000122 /* XCRemoteSwiftPackageReference "BigInt" */;
 			productName = BigInt;
+		};
+		BB0000000000000000000113 /* KeycapKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BB0000000000000000000123 /* XCRemoteSwiftPackageReference "Keycap" */;
+			productName = KeycapKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

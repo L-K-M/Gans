@@ -1,5 +1,5 @@
 {
-  "originHash" : "0ee18e3670ae7bf2f296afba8dc9ac0f366ccc183f4c45defebb31387d196a34",
+  "originHash" : "a59a62e42f8da3f7fa0e03b354c959387b9a2712e15e66ae26e7d82f80a67ea5",
   "pins" : [
     {
       "identity" : "bigint",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "e07e00fa1fd435143a2dcf8b7eec9a7710b2fdfe",
         "version" : "5.7.0"
+      }
+    },
+    {
+      "identity" : "keycap",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/L-K-M/Keycap",
+      "state" : {
+        "revision" : "416486bdc26d9b781db2f37f699b438ac7e6e958",
+        "version" : "0.1.0"
       }
     },
     {

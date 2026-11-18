@@ -1,8 +1,10 @@
 import Foundation
 import Carbon.HIToolbox
+import KeycapKit
 
 /// A global hotkey: a virtual key code plus Carbon modifier flags. Codable so it can live
-/// in `UserDefaults`.
+/// in `UserDefaults`. This is Gans's persisted shape; Keycap's `KeyCombo` is the model the
+/// registration and recorder use.
 struct HotkeySpec: Codable, Equatable {
     /// Virtual key code (e.g. `kVK_Space`).
     var keyCode: UInt32
@@ -13,13 +15,21 @@ struct HotkeySpec: Codable, Equatable {
     static let `default` = HotkeySpec(keyCode: UInt32(kVK_Space),
                                       modifiers: UInt32(controlKey | optionKey))
 
-    /// A human-readable form like "⌃⌥Space" for Settings.
-    var displayString: String {
-        var parts = ""
-        if modifiers & UInt32(controlKey) != 0 { parts += "⌃" }
-        if modifiers & UInt32(optionKey) != 0 { parts += "⌥" }
-        if modifiers & UInt32(shiftKey) != 0 { parts += "⇧" }
-        if modifiers & UInt32(cmdKey) != 0 { parts += "⌘" }
-        return parts + KeyCodes.name(for: keyCode)
+    init(keyCode: UInt32, modifiers: UInt32) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
     }
+
+    /// Builds the persisted spec from Keycap's combo model.
+    init(combo: KeyCombo) {
+        self.init(keyCode: combo.keyCode, modifiers: combo.carbonModifiers)
+    }
+
+    /// The Keycap model for this persisted combo.
+    var combo: KeyCombo {
+        KeyCombo(keyCode: keyCode, modifiers: HotkeyModifiers(carbonFlags: modifiers))
+    }
+
+    /// A human-readable form like "⌃⌥Space" for Settings.
+    var displayString: String { combo.displayString }
 }
