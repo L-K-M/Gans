@@ -464,7 +464,7 @@
 			repositoryURL = "https://github.com/L-K-M/Keycap";
 			requirement = {
 				kind = upToNextMinorVersion;
-				minimumVersion = 0.1.0;
+				minimumVersion = 0.1.1;
 			};
 		};
 		BB0000000000000000000124 /* XCRemoteSwiftPackageReference "Updraft" */ = {
@@ -472,7 +472,7 @@
 			repositoryURL = "https://github.com/L-K-M/Updraft";
 			requirement = {
 				kind = upToNextMinorVersion;
-				minimumVersion = 0.1.0;
+				minimumVersion = 0.2.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
