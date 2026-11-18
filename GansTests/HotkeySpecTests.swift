@@ -23,5 +23,7 @@ final class HotkeySpecTests: XCTestCase {
         let data = try JSONEncoder().encode(HotkeySpec(keyCode: 42, modifiers: 0x900))
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         XCTAssertEqual(object?.keys.sorted(), ["keyCode", "modifiers"])
+        XCTAssertNotNil(object?["keyCode"] as? Int)
+        XCTAssertNotNil(object?["modifiers"] as? Int)
     }
 }
