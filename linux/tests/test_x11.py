@@ -333,11 +333,10 @@ class X11HotkeyGrabberTests(unittest.TestCase):
             self.press("Num_Lock")
 
     def test_reregister_replaces_the_grab(self):
+        # On newer XKB maps, xdotool can inject Alt when asked to press an F-key.
         self.assertTrue(self.grabber.register(HotkeySpec.DEFAULT, self.fired.set))
-        # (Not Ctrl+Alt+F9: Ctrl+Alt+F1…F12 are XKB's VT-switch chords, which the server
-        # consumes before any grab can see them.)
-        self.assertTrue(self.grabber.register(HotkeySpec(key="F9", control=True, shift=True), self.fired.set))
-        self.assert_fires("ctrl+shift+F9")
+        self.assertTrue(self.grabber.register(HotkeySpec(key="g", control=True, shift=True), self.fired.set))
+        self.assert_fires("ctrl+shift+g")
         self.assert_silent("ctrl+alt+space")
 
     def test_conflicting_grab_is_reported(self):
@@ -368,8 +367,8 @@ class X11HotkeyGrabberTests(unittest.TestCase):
         dispatched = []
         grabber = X11HotkeyGrabber(self.x11, dispatch=dispatched.append)
         try:
-            self.assertTrue(grabber.register(HotkeySpec(key="F8", super_=True), self.fired.set))
-            self.press("super+F8")
+            self.assertTrue(grabber.register(HotkeySpec(key="g", super_=True), self.fired.set))
+            self.press("super+g")
             self.assertTrue(wait_until(lambda: len(dispatched) == 1, timeout=3))
             self.assertEqual(dispatched[0], self.fired.set)
             self.assertFalse(self.fired.is_set())  # only dispatch may run it
