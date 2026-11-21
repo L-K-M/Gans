@@ -400,7 +400,7 @@ class SettingsUITests(unittest.TestCase):
         recorder = window.hotkey_recorder
         recorder.clicked()
         pump(50)
-        self.key("F7")
+        self.key("g")
         self.assertTrue(recorder.is_recording)  # beeped and kept waiting
         self.assertEqual(recorder.get_label(), "Press keys…")
         self.assertEqual(self.prefs.hotkey, HotkeySpec.DEFAULT)
